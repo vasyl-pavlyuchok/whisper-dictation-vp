@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="2">
+    <title>Whisper Dictation VP</title>
+    <background file="background.png" mime-type="image/png" alignment="center" scaling="proportional"/>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <options customize="never" require-scripts="true" rootVolumeOnly="false"/>
+    <choices-outline>
+        <line choice="com.vasyl.whisper-dictation-vp"/>
+    </choices-outline>
+    <choice id="com.vasyl.whisper-dictation-vp" title="Whisper Dictation VP">
+        <pkg-ref id="com.vasyl.whisper-dictation-vp"/>
+    </choice>
+    <pkg-ref id="com.vasyl.whisper-dictation-vp" version="1.3" auth="Root">WhisperDictationVP_component.pkg</pkg-ref>
+</installer-gui-script>

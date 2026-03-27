@@ -1,0 +1,27 @@
+# Instaladores compilados
+*.pkg
+*.dmg
+
+# Imágenes personales (proporciona las tuyas en installer/resources/ y app/)
+installer/resources/background.png
+app/AppIcon.icns
+
+# Configuración de usuario
+.whisper_dictation_vp.json
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.env
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Build temporales
+build/
+dist/
+tmp/

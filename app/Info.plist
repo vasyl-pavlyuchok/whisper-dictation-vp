@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Whisper Dictation VP</string>
+	<key>CFBundleExecutable</key>
+	<string>WhisperDictationVP</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.vasyl.whisper-dictation-vp</string>
+	<key>CFBundleName</key>
+	<string>Whisper Dictation VP</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.3</string>
+	<key>CFBundleVersion</key>
+	<string>1.3</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>Whisper Dictation VP necesita Accesibilidad para pegar el texto.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Whisper Dictation VP necesita el micrófono para grabar tu voz.</string>
+</dict>
+</plist>
