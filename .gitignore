@@ -2,9 +2,9 @@
 *.pkg
 *.dmg
 
-# Imágenes personales (proporciona las tuyas en installer/resources/ y app/)
-installer/resources/background.png
-app/AppIcon.icns
+# Imágenes personales — descomenta si no quieres incluirlas
+# installer/resources/background.png
+# app/AppIcon.icns
 
 # Configuración de usuario
 .whisper_dictation_vp.json
