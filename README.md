@@ -119,7 +119,7 @@ whisper-dictation-vp/
 └── README.md
 ```
 
-> `*` No incluida en el repositorio. Coloca tu propia imagen en `installer/resources/background.png` (800×600 px recomendado).
+> `*` Imagen de fondo del instalador (800×600 px). Reemplázala con la tuya propia si haces un fork.
 
 ### Generar el .pkg
 
