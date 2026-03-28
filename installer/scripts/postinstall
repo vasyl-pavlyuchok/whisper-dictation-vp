@@ -175,7 +175,7 @@ fi
 # ── 3. Instalar dependencias Python ──────────────────────────────────────────
 "$PYTHON" -m pip install --quiet --upgrade pip 2>/dev/null || true
 "$PYTHON" -m pip install --quiet \
-  sounddevice numpy pynput python-dotenv rumps groq openai 2>/dev/null || true
+  sounddevice numpy pynput python-dotenv rumps groq openai deepgram-sdk assemblyai 2>/dev/null || true
 
 # ── 4. Actualizar script de arranque con la ruta de Python ────────────────────
 cat > "$APP_SCPT" << SCPTEOF
