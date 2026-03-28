@@ -41,16 +41,10 @@ Groq ofrece un generoso plan gratuito más que suficiente para uso personal.
 
 ## Instalación
 
-### Opción 1 — Instalador .pkg (recomendado)
-
 1. Descarga `WhisperDictationVP.pkg` desde la página de [Releases](../../releases)
 2. Haz doble clic para ejecutar el instalador
 3. El instalador comprueba automáticamente si tienes Python instalado y lo instala si hace falta
 4. Al primer arranque, la app te pedirá tu API key
-
-### Opción 2 — Desde el código fuente
-
-Consulta la sección [Build](#build-desde-el-código-fuente) más abajo.
 
 ---
 
@@ -74,14 +68,7 @@ La configuración se guarda en `~/.whisper_dictation_vp.json`:
 }
 ```
 
-También puedes usar variables de entorno:
-
-```bash
-export WHISPER_PROVIDER=groq
-export WHISPER_API_KEY=gsk_...
-```
-
-Para cambiar la API key o el proveedor, elimina `~/.whisper_dictation_vp.json` y reinicia la app.
+Para cambiar la API key o el proveedor, elimina ese archivo y reinicia la app.
 
 ---
 
@@ -94,59 +81,6 @@ sudo rm -rf "/Applications/Whisper Dictation VP.app"
 sudo rm -rf /usr/local/lib/whisper_dictation_vp
 rm -f ~/.whisper_dictation_vp.json
 ```
-
----
-
-## Build desde el código fuente
-
-### Estructura del repositorio
-
-```
-whisper-dictation-vp/
-├── src/
-│   └── whisper_dictation_vp.py   # Script principal de la app
-├── app/
-│   ├── Info.plist                 # Configuración del bundle .app
-│   └── launch_whisper.scpt        # Script de arranque (AppleScript)
-├── installer/
-│   ├── distribution.xml           # Configuración del wizard de instalación
-│   ├── scripts/
-│   │   └── postinstall            # Script de post-instalación
-│   └── resources/
-│       ├── welcome.html           # Pantalla de bienvenida del instalador
-│       └── background.png         # Imagen de fondo del instalador *
-├── build.sh                       # Script de build automatizado
-└── README.md
-```
-
-> `*` Imagen de fondo del instalador (800×600 px). Reemplázala con la tuya propia si haces un fork.
-
-### Generar el .pkg
-
-Requisitos previos:
-- macOS con Xcode Command Line Tools instalado (`xcode-select --install`)
-- Las herramientas `pkgbuild` y `productbuild` vienen incluidas con Xcode Command Line Tools — no hace falta instalar nada más
-
-```bash
-chmod +x build.sh
-./build.sh
-```
-
-El instalador se genera en `~/Desktop/WhisperDictationVP.pkg`.
-
----
-
-## Dependencias Python
-
-Instaladas automáticamente por el instalador:
-
-- `rumps` — icono y menú en la barra de menús
-- `sounddevice` — captura de audio
-- `numpy` — procesamiento de audio
-- `pynput` — escucha global del teclado
-- `python-dotenv` — soporte de variables de entorno
-- `groq` — cliente de la API de Groq
-- `openai` — cliente de la API de OpenAI
 
 ---
 
