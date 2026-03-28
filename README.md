@@ -123,8 +123,11 @@ whisper-dictation-vp/
 
 ### Generar el .pkg
 
+Requisitos previos:
+- macOS con Xcode Command Line Tools instalado (`xcode-select --install`)
+- Las herramientas `pkgbuild` y `productbuild` vienen incluidas con Xcode Command Line Tools — no hace falta instalar nada más
+
 ```bash
-# Requiere macOS con Xcode Command Line Tools instalado
 chmod +x build.sh
 ./build.sh
 ```
