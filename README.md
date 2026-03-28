@@ -63,7 +63,7 @@ Groq es gratuito y más que suficiente para uso personal.
 macOS pedirá dos permisos la primera vez:
 
 - **Accesibilidad** — para pegar el texto automáticamente con Cmd+V
-- **Micrófono** — para grabar tu voz *(se concede a Terminal, que actúa como proceso intermediario)*
+- **Micrófono** — para grabar tu voz
 
 ---
 

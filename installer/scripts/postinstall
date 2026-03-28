@@ -177,16 +177,13 @@ fi
 "$PYTHON" -m pip install --quiet \
   sounddevice numpy pynput python-dotenv rumps groq openai deepgram-sdk assemblyai 2>/dev/null || true
 
-# ── 4. Actualizar script de arranque con la ruta de Python ────────────────────
-cat > "$APP_SCPT" << SCPTEOF
-tell application "Terminal"
-    set w to do script "${PYTHON} /usr/local/lib/whisper_dictation_vp/whisper_dictation_vp.py"
-    delay 1
-    set miniaturized of window 1 to true
-end tell
-SCPTEOF
+# ── 3b. Re-firmar Python tras pip install (pip invalida la firma original) ────
+PYTHON_FRAMEWORK_APP=$(dirname $(dirname $(dirname $(dirname "$PYTHON"))))/Resources/Python.app
+if [ -d "$PYTHON_FRAMEWORK_APP" ]; then
+  codesign --force --deep --sign - "$PYTHON_FRAMEWORK_APP" 2>/dev/null || true
+fi
 
-# ── 5. Crear LaunchAgent (auto-inicio al encender el Mac) ─────────────────────
+# ── 4. Crear LaunchAgent (auto-inicio al encender el Mac) ─────────────────────
 mkdir -p "$USER_HOME/Library/LaunchAgents"
 cat > "$PLIST" << PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -197,8 +194,9 @@ cat > "$PLIST" << PLISTEOF
     <string>com.vasyl.whisper-dictation-vp</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/bin/osascript</string>
-        <string>${APP_SCPT}</string>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>sleep 10 &amp;&amp; ${PYTHON} /usr/local/lib/whisper_dictation_vp/whisper_dictation_vp.py</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
