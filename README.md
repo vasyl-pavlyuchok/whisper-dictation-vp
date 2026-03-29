@@ -2,7 +2,7 @@
 
 Dictado por voz para macOS usando inteligencia artificial. Mantén **Option derecho** pulsado para grabar, suelta para transcribir y pegar automáticamente en cualquier app.
 
-Diseñado por **Vasyl Pavlyuchok** & **Claude** — v2.0
+Diseñado por **Vasyl Pavlyuchok** & **Claude** — v2.1
 
 ---
 
@@ -44,7 +44,30 @@ Groq es gratuito y más que suficiente para uso personal.
 1. Descarga `WhisperDictationVP.pkg` desde la página de [Releases](../../releases)
 2. Haz doble clic para ejecutar el instalador
 3. El instalador comprueba automáticamente si tienes Python instalado y lo instala si hace falta
-4. Al primer arranque, la app te pedirá tu proveedor y API key
+4. Al finalizar aparecerá un aviso recordándote activar el permiso de Accesibilidad (ver abajo)
+5. Al primer arranque, la app te pedirá tu proveedor y API key
+
+---
+
+## Permisos necesarios
+
+### Accesibilidad — obligatorio
+
+La app necesita que **Terminal** tenga permiso de Accesibilidad para poder escuchar la tecla de dictado y pegar el texto.
+
+El instalador te recordará este paso, pero los pasos son:
+
+1. Abre **Preferencias del Sistema → Seguridad y Privacidad → Privacidad → Accesibilidad**
+2. Haz clic en el candado e introduce tu contraseña
+3. Activa la casilla de **Terminal**
+
+Sin este permiso la tecla de dictado no funcionará.
+
+### Micrófono
+
+macOS pedirá permiso de micrófono automáticamente la primera vez que grabes.
+
+---
 
 ## Funcionalidades
 
@@ -55,15 +78,6 @@ Groq es gratuito y más que suficiente para uso personal.
 - **Tecla de activación configurable** — Option derecho, Option izquierdo, Control o Command
 - **Sonido sutil** al empezar a grabar y al terminar
 - Se inicia automáticamente al arrancar el Mac
-
----
-
-## Permisos necesarios
-
-macOS pedirá dos permisos la primera vez:
-
-- **Accesibilidad** — para pegar el texto automáticamente con Cmd+V
-- **Micrófono** — para grabar tu voz
 
 ---
 

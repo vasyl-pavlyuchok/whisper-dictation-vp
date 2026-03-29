@@ -1,7 +1,6 @@
 #!/bin/bash
 set -e
 
-APP_SCPT="/Applications/Whisper Dictation VP.app/Contents/Resources/launch_whisper.scpt"
 CURRENT_USER=$(stat -f%Su /dev/console)
 USER_HOME=$(eval echo "~$CURRENT_USER")
 PLIST="$USER_HOME/Library/LaunchAgents/com.vasyl.whisper-dictation-vp.plist"
@@ -177,13 +176,16 @@ fi
 "$PYTHON" -m pip install --quiet \
   sounddevice numpy pynput python-dotenv rumps groq openai deepgram-sdk assemblyai 2>/dev/null || true
 
-# ── 3b. Re-firmar Python tras pip install (pip invalida la firma original) ────
-PYTHON_FRAMEWORK_APP=$(dirname $(dirname $(dirname $(dirname "$PYTHON"))))/Resources/Python.app
+# ── 4. Re-firmar Python.app del framework (pip invalida la firma original) ────
+PYTHON_FRAMEWORK_APP=$(dirname "$(dirname "$(dirname "$(dirname "$PYTHON")")")")/Resources/Python.app
 if [ -d "$PYTHON_FRAMEWORK_APP" ]; then
   codesign --force --deep --sign - "$PYTHON_FRAMEWORK_APP" 2>/dev/null || true
 fi
 
-# ── 4. Crear LaunchAgent (auto-inicio al encender el Mac) ─────────────────────
+# ── 5. Firmar la app instalada ────────────────────────────────────────────────
+codesign --force --sign - "/Applications/Whisper Dictation VP.app" 2>/dev/null || true
+
+# ── 6. Crear LaunchAgent (auto-inicio al login) ───────────────────────────────
 mkdir -p "$USER_HOME/Library/LaunchAgents"
 cat > "$PLIST" << PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -196,7 +198,7 @@ cat > "$PLIST" << PLISTEOF
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>sleep 10 &amp;&amp; ${PYTHON} /usr/local/lib/whisper_dictation_vp/whisper_dictation_vp.py</string>
+        <string>sleep 10 &amp;&amp; open -a "Whisper Dictation VP"</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -211,8 +213,32 @@ cat > "$PLIST" << PLISTEOF
 PLISTEOF
 chown "$CURRENT_USER" "$PLIST"
 
-# ── 6. Activar LaunchAgent ────────────────────────────────────────────────────
-sudo -u "$CURRENT_USER" launchctl unload "$PLIST" 2>/dev/null || true
-sudo -u "$CURRENT_USER" launchctl load "$PLIST"
+# ── 7. Activar LaunchAgent ────────────────────────────────────────────────────
+as_user launchctl unload "$PLIST" 2>/dev/null || true
+as_user launchctl load "$PLIST" 2>/dev/null || true
+
+# ── 8. Instrucciones de Accesibilidad ────────────────────────────────────────
+dialog_ok \
+"✅ Whisper Dictation VP 2.1 instalado correctamente.
+
+PASO OBLIGATORIO — Permiso de Accesibilidad:
+
+Para que el atajo de teclado funcione debes dar permiso a Terminal:
+
+1. Abre: Apple  → Preferencias del Sistema
+   → Seguridad y Privacidad → Privacidad → Accesibilidad
+
+2. Haz clic en el candado e introduce tu contraseña
+
+3. Activa la casilla de «Terminal»
+
+Sin este permiso la tecla de dictado no funcionará.
+
+Tecla predeterminada: Option derecho
+(mantener para grabar, soltar para transcribir y pegar)" \
+"Whisper Dictation VP instalado" "note"
+
+# ── 9. Lanzar la app al finalizar ────────────────────────────────────────────
+as_user open -a "Whisper Dictation VP" 2>/dev/null || true
 
 exit 0
