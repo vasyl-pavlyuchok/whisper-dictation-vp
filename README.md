@@ -2,7 +2,7 @@
 
 Dictado por voz para macOS usando inteligencia artificial. Doble-toque **Option derecho** para iniciar la grabación, toque simple para detener — el texto aparece pegado automáticamente en cualquier app.
 
-Diseñado por **Vasyl Pavlyuchok** & **Claude** — v2.2
+Diseñado por **Vasyl Pavlyuchok** & **Claude** — v2.3
 
 ---
 
@@ -105,15 +105,12 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
-### v2.2
-- **Doble-toque para grabar** — ya no hace falta mantener la tecla pulsada
-- **Historial interactivo** — clic en una transcripción para ver, copiar, pegar o editar
-- Thread safety: todas las actualizaciones de UI van al main thread
-- Feedback sonoro en errores de transcripción y grabaciones demasiado cortas
-- Protección contra key-repeat del SO
-- Escape de caracteres especiales en diálogos AppleScript
-- Cierre limpio del keyboard listener al salir
-- Diálogos de configuración en hilos separados (no bloquean el run loop)
+### v2.3
+- **Submenú Proveedor** — cambia de proveedor directamente desde el menú, con checkmark en el activo
+- **Submenú Idioma** — cambia el idioma directamente desde el menú, sin pasar por Configuración
+- **Historial mejorado** — clic abre la transcripción completa directamente, editable, con botones Copiar / Copiar y pegar
+- **Botón Limpiar historial** en el submenú del historial
+- **Detección de silencio** — si no hay voz, no se envía nada a la API (evita transcripciones fantasma como "Gracias.")
 
 ### v2.1
 - Detección automática de Python (3.11–3.13, Homebrew y framework)

@@ -2,7 +2,7 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v2.2
+Diseñado por Vasyl Pavlyuchok & Claude — v2.3
 """
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
@@ -19,7 +19,7 @@ DTYPE             = "int16"
 ICON_IDLE         = "🎙"
 ICON_RECORDING    = "⭕"
 ICON_PROCESSING   = "⏳"
-DOUBLE_TAP_WINDOW = 0.4   # segundos entre taps para considerar doble-toque
+DOUBLE_TAP_WINDOW = 0.4
 
 PROVIDERS = {
     "groq":       {"name": "Groq (gratis)",  "url": "console.groq.com",       "placeholder": "gsk_..."},
@@ -63,7 +63,6 @@ def load_config():
     config.setdefault("language", "es")
     config.setdefault("hotkey", "alt_r")
     config.setdefault("history", [])
-    # Compatibilidad con v1.x
     if not config["providers"] and os.environ.get("GROQ_API_KEY"):
         config["providers"]["groq"] = os.environ.get("GROQ_API_KEY")
     if not config["providers"] and os.environ.get("WHISPER_API_KEY"):
@@ -82,12 +81,10 @@ _dialogs_lock = threading.Lock()
 
 
 def _osa_escape(s: str) -> str:
-    """Escapa caracteres especiales para literales de cadena en AppleScript."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _run_dialog(args):
-    """Ejecuta un osascript, lo registra y devuelve stdout."""
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     with _dialogs_lock:
         _active_dialogs.append(proc)
@@ -121,6 +118,26 @@ def dialog_input(prompt, default="", cancelable=True):
         f'  if button returned of r is "Cancelar" then return ""\n'
         f'  return text returned of r\n'
         f'end tell'])
+
+def dialog_text_view(text):
+    """Muestra el texto completo editable con botones Cancelar / Copiar / Copiar y pegar.
+    Devuelve (accion, texto_editado) o (None, None) si se cancela."""
+    safe_text = _osa_escape(text)
+    result = _run_dialog(["osascript", "-e",
+        f'tell app "System Events"\n'
+        f'  set r to display dialog "Transcripción — edita si lo necesitas:" '
+        f'default answer "{safe_text}" '
+        f'with title "Whisper Dictation VP" '
+        f'buttons {{"Cancelar", "Copiar", "Copiar y pegar"}} default button "Copiar y pegar"\n'
+        f'  if button returned of r is "Cancelar" then return "CANCEL"\n'
+        f'  return (button returned of r) & "|" & (text returned of r)\n'
+        f'end tell'])
+    if not result or result == "CANCEL":
+        return None, None
+    parts = result.split("|", 1)
+    action     = parts[0]
+    edited     = parts[1] if len(parts) > 1 else text
+    return action, edited
 
 def dialog_choice(prompt, *buttons):
     options    = [b for b in buttons if b != "Cancelar"]
@@ -216,18 +233,16 @@ class WhisperDictationApp(rumps.App):
     def __init__(self):
         super().__init__(ICON_IDLE, quit_button=None)
         self.config      = load_config()
-        self.lock        = threading.Lock()   # protege recording + audio_frames
-        self.config_lock = threading.Lock()   # protege mutaciones del config
+        self.lock        = threading.Lock()
+        self.config_lock = threading.Lock()
 
         self.recording    = False
         self.audio_frames = []
 
-        # Estado doble-toque
         self._last_tap_time = 0.0
-        self._key_down      = False  # True mientras la tecla está físicamente presionada
-        self._stop_tap      = False  # True si el press actual fue para detener grabación
+        self._key_down      = False
+        self._stop_tap      = False
 
-        # Cola para despachar llamadas UI al main thread de forma segura
         self._ui_queue = queue.Queue()
         self._ui_timer = rumps.Timer(self._flush_ui_queue, 0.05)
         self._ui_timer.start()
@@ -254,10 +269,9 @@ class WhisperDictationApp(rumps.App):
         self._listener.daemon = True
         self._listener.start()
 
-    # ── UI dispatch (thread-safe) ─────────────────────────────────────────────
+    # ── UI dispatch ───────────────────────────────────────────────────────────
 
     def _dispatch(self, fn, *args):
-        """Encola una llamada para ejecutarse en el main thread vía el timer."""
         self._ui_queue.put((fn, args))
 
     def _flush_ui_queue(self, _):
@@ -274,35 +288,67 @@ class WhisperDictationApp(rumps.App):
     # ── Client & menu ─────────────────────────────────────────────────────────
 
     def _build_client(self):
-        provider = self.config["active_provider"]
-        api_key  = self.config["providers"].get(provider, "")
+        provider      = self.config["active_provider"]
+        api_key       = self.config["providers"].get(provider, "")
         self.provider = provider
         self.client   = build_client(provider, api_key)
 
     def _build_menu(self):
-        provider_name = PROVIDERS.get(self.provider, {}).get("name", self.provider)
-        lang_name     = LANGUAGES.get(self.config["language"], self.config["language"])
-        hotkey_name   = HOTKEY_NAMES.get(self.config["hotkey"], self.config["hotkey"])
+        active_provider = self.config["active_provider"]
+        active_lang     = self.config["language"]
+        hotkey_name     = HOTKEY_NAMES.get(self.config["hotkey"], self.config["hotkey"])
 
+        # ── Submenú Proveedor ─────────────────────────────────────────────────
+        configured_providers = list(self.config["providers"].keys())
+        provider_menu = rumps.MenuItem("Proveedor")
+        for p in configured_providers:
+            name   = PROVIDERS.get(p, {}).get("name", p)
+            mark   = "✓ " if p == active_provider else "    "
+            if len(configured_providers) > 1:
+                item = rumps.MenuItem(
+                    f"{mark}{name}",
+                    callback=lambda _, prov=p: self._switch_provider(prov)
+                )
+            else:
+                item = rumps.MenuItem(f"{mark}{name}")
+            provider_menu.add(item)
+
+        # ── Submenú Idioma ────────────────────────────────────────────────────
+        lang_menu = rumps.MenuItem("Idioma")
+        for key, name in LANGUAGES.items():
+            mark = "✓ " if key == active_lang else "    "
+            lang_menu.add(rumps.MenuItem(
+                f"{mark}{name}",
+                callback=lambda _, k=key: self._switch_language(k)
+            ))
+
+        # ── Submenú Historial ─────────────────────────────────────────────────
         history_menu = rumps.MenuItem("Historial")
         history = self.config.get("history", [])
         if history:
-            for i, item in enumerate(reversed(history)):
-                short = item[:60] + "…" if len(item) > 60 else item
+            for item in history:
+                short = item[:65] + "…" if len(item) > 65 else item
                 history_menu.add(rumps.MenuItem(
-                    f"{i+1}. {short}",
+                    short,
                     callback=lambda _, t=item: threading.Thread(
                         target=self._show_history_item, args=(t,), daemon=True
                     ).start()
                 ))
+            history_menu.add(None)
+            history_menu.add(rumps.MenuItem(
+                "Limpiar historial",
+                callback=lambda _: self._clear_history()
+            ))
         else:
             history_menu.add(rumps.MenuItem("(vacío)"))
 
+        # ── Menú principal ────────────────────────────────────────────────────
         self.menu.clear()
         self.menu = [
-            rumps.MenuItem("Whisper Dictation VP v2.2"),
-            rumps.MenuItem(f"Proveedor: {provider_name}"),
-            rumps.MenuItem(f"Idioma: {lang_name}"),
+            rumps.MenuItem("Whisper Dictation VP v2.3"),
+            None,
+            provider_menu,
+            lang_menu,
             rumps.MenuItem(f"Tecla: {hotkey_name} (doble-toque)"),
             None,
             history_menu,
@@ -312,60 +358,78 @@ class WhisperDictationApp(rumps.App):
             rumps.MenuItem("Salir", callback=self._quit),
         ]
 
+    # ── Cambio rápido de proveedor e idioma desde el menú ─────────────────────
+
+    def _switch_provider(self, provider):
+        if provider == self.config["active_provider"]:
+            return
+        self.config["active_provider"] = provider
+        save_config(self.config)
+        self._build_client()
+        self._build_menu()
+
+    def _switch_language(self, lang):
+        if lang == self.config["language"]:
+            return
+        self.config["language"] = lang
+        save_config(self.config)
+        self._build_menu()
+
     # ── Historial interactivo ─────────────────────────────────────────────────
 
     def _show_history_item(self, text):
-        """Muestra una transcripción del historial con opciones de acción."""
-        action = dialog_choice(
-            "¿Qué hacer con esta transcripción?",
-            "Cancelar", "Ver / Editar", "Copiar y pegar", "Copiar"
-        )
-        if action == "Copiar":
-            subprocess.run(["pbcopy"], input=text.encode("utf-8"))
-            play_sound("Tink")
-        elif action == "Copiar y pegar":
-            subprocess.run(["pbcopy"], input=text.encode("utf-8"))
+        """Muestra la transcripción directamente editable y actúa según el botón."""
+        action, edited = dialog_text_view(text)
+        if action is None:
+            return
+
+        target = edited if edited else text
+        if action in ("Copiar", "Copiar y pegar"):
+            subprocess.run(["pbcopy"], input=target.encode("utf-8"))
+        if action == "Copiar y pegar":
             subprocess.run(["osascript", "-e",
                 'tell application "System Events" to keystroke "v" using command down'])
             play_sound("Pop")
-        elif action == "Ver / Editar":
-            edited = dialog_input("Transcripción (edita si lo necesitas):", default=text)
-            if edited:
-                subprocess.run(["pbcopy"], input=edited.encode("utf-8"))
-                play_sound("Tink")
-                # Actualizar historial con el texto editado
-                with self.config_lock:
-                    history = self.config.get("history", [])
-                    try:
-                        idx = history.index(text)
-                        history[idx] = edited
-                        self.config["history"] = history
-                        save_config(self.config)
-                    except ValueError:
-                        pass
-                self._dispatch(self._build_menu)
+        else:
+            play_sound("Tink")
 
-    # ── Configuración ─────────────────────────────────────────────────────────
+        # Actualizar historial si el texto fue editado
+        if edited and edited != text:
+            with self.config_lock:
+                history = self.config.get("history", [])
+                try:
+                    idx = history.index(text)
+                    history[idx] = edited
+                    self.config["history"] = history
+                    save_config(self.config)
+                except ValueError:
+                    pass
+            self._dispatch(self._build_menu)
+
+    def _clear_history(self):
+        with self.config_lock:
+            self.config["history"] = []
+            save_config(self.config)
+        self._dispatch(self._build_menu)
+
+    # ── Configuración (APIs y tecla) ──────────────────────────────────────────
 
     def _open_settings(self, _):
-        """Los diálogos de configuración corren en un hilo para no bloquear el run loop."""
         threading.Thread(target=self._settings_thread, daemon=True).start()
 
     def _settings_thread(self):
         choice = dialog_choice(
             "¿Qué quieres configurar?",
-            "Cancelar", "Tecla de activación", "Idioma", "APIs"
+            "Cancelar", "Tecla de activación", "APIs"
         )
         if choice == "APIs":
             self._settings_apis()
-        elif choice == "Idioma":
-            self._settings_language()
         elif choice == "Tecla de activación":
             self._settings_hotkey()
 
     def _settings_apis(self):
-        providers   = self.config["providers"]
-        configured  = [PROVIDERS[p]["name"] for p in providers if p in PROVIDERS]
+        providers  = self.config["providers"]
+        configured = [PROVIDERS[p]["name"] for p in providers if p in PROVIDERS]
 
         options = []
         if configured:
@@ -385,7 +449,6 @@ class WhisperDictationApp(rumps.App):
             self._manage_providers()
 
     def _manage_providers(self):
-        # Sólo proveedores conocidos para mantener names/providers sincronizados
         providers = [p for p in self.config["providers"] if p in PROVIDERS]
         if not providers:
             return
@@ -403,10 +466,7 @@ class WhisperDictationApp(rumps.App):
             "Cancelar", "Eliminar", "Cambiar API key", "Usar este"
         )
         if action == "Usar este":
-            self.config["active_provider"] = provider
-            save_config(self.config)
-            self._build_client()
-            self._dispatch(self._build_menu)
+            self._switch_provider(provider)
         elif action == "Cambiar API key":
             self._setup_provider(edit=provider)
         elif action == "Eliminar":
@@ -458,16 +518,6 @@ class WhisperDictationApp(rumps.App):
         self._build_client()
         self._dispatch(self._build_menu)
 
-    def _settings_language(self):
-        names  = list(LANGUAGES.values())
-        keys   = list(LANGUAGES.keys())
-        choice = dialog_choice("Selecciona el idioma de transcripción:", "Cancelar", *names)
-        if not choice or choice == "Cancelar":
-            return
-        self.config["language"] = keys[names.index(choice)]
-        save_config(self.config)
-        self._dispatch(self._build_menu)
-
     def _settings_hotkey(self):
         names  = list(HOTKEY_NAMES.values())
         keys   = list(HOTKEY_NAMES.keys())
@@ -494,16 +544,15 @@ class WhisperDictationApp(rumps.App):
         if key != self._current_hotkey():
             return
         if self._key_down:
-            return  # Ignorar key-repeat del SO
-        self._key_down  = True
-        self._stop_tap  = False
+            return
+        self._key_down = True
+        self._stop_tap = False
 
         with self.lock:
             if self.recording:
-                # Detener grabación en el primer press
-                self._stop_tap    = True
-                self.recording    = False
-                frames            = list(self.audio_frames)
+                self._stop_tap = True
+                self.recording = False
+                frames         = list(self.audio_frames)
                 self._dispatch(self._set_title, ICON_PROCESSING)
                 threading.Thread(target=self._process, args=(frames,), daemon=True).start()
 
@@ -513,14 +562,11 @@ class WhisperDictationApp(rumps.App):
         self._key_down = False
 
         if self._stop_tap:
-            # Este release pertenece al press que detuvo la grabación;
-            # no debe contar como primer tap del doble-toque.
             self._stop_tap = False
             return
 
         now = time.time()
         if now - self._last_tap_time <= DOUBLE_TAP_WINDOW:
-            # Doble-toque detectado → iniciar grabación
             self._last_tap_time = 0.0
             with self.lock:
                 self.recording = True
@@ -528,10 +574,9 @@ class WhisperDictationApp(rumps.App):
             play_sound("Tink")
             self._dispatch(self._set_title, ICON_RECORDING)
         else:
-            # Primer tap — esperar al segundo
             self._last_tap_time = now
 
-    # ── Procesado de audio ────────────────────────────────────────────────────
+    # ── Procesado ─────────────────────────────────────────────────────────────
 
     def _process(self, frames):
         path = None
@@ -545,6 +590,12 @@ class WhisperDictationApp(rumps.App):
             if duration < 0.3:
                 play_sound("Funk")
                 print(f"⚠ Grabación demasiado corta ({duration:.2f}s), ignorada")
+                return
+
+            # Detección de silencio: RMS bajo → no enviar a la API
+            rms = np.sqrt(np.mean(audio.astype(np.float32) ** 2))
+            if rms < 300:
+                print(f"⚠ Audio silencioso (RMS={rms:.0f}), ignorado")
                 return
 
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
