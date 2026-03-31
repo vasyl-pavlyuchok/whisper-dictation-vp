@@ -2,7 +2,7 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v2.3
+Diseñado por Vasyl Pavlyuchok & Claude — v2.4
 """
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
@@ -122,6 +122,8 @@ if _VIBRANCY_OK:
             self._window.setReleasedWhenClosed_(False)
             self._window.setTitlebarAppearsTransparent_(True)
             self._window.setMovableByWindowBackground_(True)
+            self._window.setOpaque_(False)
+            self._window.setBackgroundColor_(NSColor.clearColor())
 
             # Fondo vibrancy — translúcido respecto a lo que hay detrás de la ventana
             fx = NSVisualEffectView.alloc().initWithFrame_(
@@ -132,22 +134,9 @@ if _VIBRANCY_OK:
             fx.setState_(NSVisualEffectStateActive)
             self._window.setContentView_(fx)
 
-            # Label
-            lbl = NSTextField.alloc().initWithFrame_(
-                NSMakeRect(20, self.H - 50, self.W - 40, 20)
-            )
-            lbl.setStringValue_("Transcripción — edita si lo necesitas:")
-            lbl.setEditable_(False)
-            lbl.setSelectable_(False)
-            lbl.setBezeled_(False)
-            lbl.setDrawsBackground_(False)
-            lbl.setFont_(NSFont.boldSystemFontOfSize_(13))
-            lbl.setTextColor_(NSColor.labelColor())
-            fx.addSubview_(lbl)
-
             # ScrollView + NSTextView editable
             self._scroll = NSScrollView.alloc().initWithFrame_(
-                NSMakeRect(20, 62, self.W - 40, self.H - 90)
+                NSMakeRect(20, 55, self.W - 40, self.H - 75)
             )
             self._scroll.setBorderType_(2)  # NSBezelBorder
             self._scroll.setHasVerticalScroller_(True)
@@ -171,9 +160,8 @@ if _VIBRANCY_OK:
             self._handler.set_callback(self._on_button)
 
             buttons = [
-                ("Cancelar",       20,              100, 0),
-                ("Copiar",         self.W - 230,    100, 1),
-                ("Copiar y pegar", self.W - 122,    115, 2),
+                ("Cancelar", 20,              100, 0),
+                ("Copiar",   self.W - 120,    100, 1),
             ]
             for title, x, w, tag in buttons:
                 btn = NSButton.alloc().initWithFrame_(NSMakeRect(x, 14, w, 32))
@@ -182,14 +170,14 @@ if _VIBRANCY_OK:
                 btn.setTag_(tag)
                 btn.setTarget_(self._handler)
                 btn.setAction_(b"buttonClicked:")
-                if tag == 2:
-                    btn.setKeyEquivalent_("\r")   # Enter → Copiar y pegar
+                if tag == 1:
+                    btn.setKeyEquivalent_("\r")   # Enter → Copiar
                 elif tag == 0:
                     btn.setKeyEquivalent_("\x1b")  # Escape → Cancelar
                 fx.addSubview_(btn)
 
         def _on_button(self, tag):
-            self._result_action = {0: None, 1: "Copiar", 2: "Copiar y pegar"}.get(tag)
+            self._result_action = {0: None, 1: "Copiar"}.get(tag)
             NSApp.stopModal()
             self._window.orderOut_(None)
 
@@ -275,10 +263,10 @@ def dialog_text_view_fallback(text):
     safe_text = _osa_escape(text)
     result = _run_dialog(["osascript", "-e",
         f'tell app "System Events"\n'
-        f'  set r to display dialog "Transcripción — edita si lo necesitas:" '
+        f'  set r to display dialog "" '
         f'default answer "{safe_text}" '
         f'with title "Whisper Dictation VP" '
-        f'buttons {{"Cancelar", "Copiar", "Copiar y pegar"}} default button "Copiar y pegar"\n'
+        f'buttons {{"Cancelar", "Copiar"}} default button "Copiar"\n'
         f'  if button returned of r is "Cancelar" then return "CANCEL"\n'
         f'  return (button returned of r) & "|" & (text returned of r)\n'
         f'end tell'])
@@ -406,8 +394,14 @@ class WhisperDictationApp(rumps.App):
         self._build_client()
         self._build_menu()
 
+        try:
+            device_info = sd.query_devices(None, 'input')
+            self._capture_rate = int(device_info['default_samplerate'])
+        except Exception:
+            self._capture_rate = SAMPLE_RATE
+
         self.stream = sd.InputStream(
-            samplerate=SAMPLE_RATE, channels=CHANNELS,
+            samplerate=self._capture_rate, channels=CHANNELS,
             dtype=DTYPE, callback=self._audio_callback, blocksize=1024,
         )
         self.stream.start()
@@ -448,7 +442,9 @@ class WhisperDictationApp(rumps.App):
 
         # ── Submenú Proveedor ─────────────────────────────────────────────────
         configured = list(self.config["providers"].keys())
-        provider_menu = rumps.MenuItem("Proveedor")
+        active_provider_name = PROVIDERS.get(active_provider, {}).get("name", active_provider)
+        active_lang_name     = LANGUAGES.get(active_lang, active_lang)
+        provider_menu = rumps.MenuItem(f"Proveedor: {active_provider_name}")
         for p in configured:
             name = PROVIDERS.get(p, {}).get("name", p)
             mark = "✓ " if p == active_provider else "    "
@@ -461,7 +457,7 @@ class WhisperDictationApp(rumps.App):
                 provider_menu.add(rumps.MenuItem(f"{mark}{name}"))
 
         # ── Submenú Idioma ────────────────────────────────────────────────────
-        lang_menu = rumps.MenuItem("Idioma")
+        lang_menu = rumps.MenuItem(f"Idioma: {active_lang_name}")
         for key, name in LANGUAGES.items():
             mark = "✓ " if key == active_lang else "    "
             lang_menu.add(rumps.MenuItem(
@@ -492,7 +488,7 @@ class WhisperDictationApp(rumps.App):
         # ── Menú principal ────────────────────────────────────────────────────
         self.menu.clear()
         self.menu = [
-            rumps.MenuItem("Whisper Dictation VP v2.3"),
+            rumps.MenuItem("Whisper Dictation VP v2.4"),
             None,
             provider_menu,
             lang_menu,
@@ -552,12 +548,7 @@ class WhisperDictationApp(rumps.App):
 
         target = edited if edited else text
         subprocess.run(["pbcopy"], input=target.encode("utf-8"))
-        if action == "Copiar y pegar":
-            subprocess.run(["osascript", "-e",
-                'tell application "System Events" to keystroke "v" using command down'])
-            play_sound("Pop")
-        else:
-            play_sound("Tink")
+        play_sound("Tink")
 
         # Actualizar historial si se editó el texto
         if edited and edited != text:
@@ -751,6 +742,18 @@ class WhisperDictationApp(rumps.App):
                 return
 
             audio    = np.concatenate(frames, axis=0)
+
+            # Remuestrear a 16kHz si la captura fue a otra frecuencia (evita
+            # el resampling interno de macOS que degrada la calidad)
+            if self._capture_rate != SAMPLE_RATE:
+                flat = audio.flatten().astype(np.float32)
+                n_out = int(len(flat) * SAMPLE_RATE / self._capture_rate)
+                audio = np.interp(
+                    np.linspace(0, len(flat) - 1, n_out),
+                    np.arange(len(flat)),
+                    flat
+                ).astype(np.int16).reshape(-1, 1)
+
             duration = len(audio) / SAMPLE_RATE
 
             if duration < 0.3:

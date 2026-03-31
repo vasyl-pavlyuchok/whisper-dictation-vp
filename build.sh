@@ -5,7 +5,7 @@ set -e
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$(mktemp -d)"
 PKG_ROOT="$BUILD_DIR/pkg_root"
-VERSION="2.3.1"
+VERSION="2.4"
 OUTPUT="$HOME/Desktop/WhisperDictationVP.pkg"
 
 echo "==> Preparando estructura..."

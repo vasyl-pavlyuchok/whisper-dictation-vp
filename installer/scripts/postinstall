@@ -219,7 +219,7 @@ as_user launchctl load "$PLIST" 2>/dev/null || true
 
 # ── 8. Instrucciones de Accesibilidad ────────────────────────────────────────
 dialog_ok \
-"✅ Whisper Dictation VP 2.3.1 instalado correctamente.
+"✅ Whisper Dictation VP 2.4 instalado correctamente.
 
 PASO OBLIGATORIO — Permiso de Accesibilidad:
 

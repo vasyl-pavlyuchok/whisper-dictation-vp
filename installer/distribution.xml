@@ -10,5 +10,5 @@
     <choice id="com.vasyl.whisper-dictation-vp" title="Whisper Dictation VP">
         <pkg-ref id="com.vasyl.whisper-dictation-vp"/>
     </choice>
-    <pkg-ref id="com.vasyl.whisper-dictation-vp" version="2.1" auth="Root">WhisperDictationVP_component.pkg</pkg-ref>
+    <pkg-ref id="com.vasyl.whisper-dictation-vp" version="2.4" auth="Root">WhisperDictationVP_component.pkg</pkg-ref>
 </installer-gui-script>
