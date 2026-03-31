@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
 """
 Whisper Dictation VP — Dictado por voz para macOS.
-Manten Option derecho para grabar. Suelta para transcribir y pegar.
-Disenado por Vasyl Pavlyuchok & Claude — v2.0
+Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
+Diseñado por Vasyl Pavlyuchok & Claude — v2.2
 """
 
-import os, sys, tempfile, threading, subprocess, json, wave
+import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
 from pynput import keyboard
 from dotenv import load_dotenv
 load_dotenv()
 
-CONFIG_FILE     = os.path.expanduser("~/.whisper_dictation_vp.json")
-HISTORY_MAX     = 10
-SAMPLE_RATE     = 16000
-CHANNELS        = 1
-DTYPE           = "int16"
-ICON_IDLE       = "🎙"
-ICON_RECORDING  = "⭕"
-ICON_PROCESSING = "⏳"
+CONFIG_FILE       = os.path.expanduser("~/.whisper_dictation_vp.json")
+HISTORY_MAX       = 10
+SAMPLE_RATE       = 16000
+CHANNELS          = 1
+DTYPE             = "int16"
+ICON_IDLE         = "🎙"
+ICON_RECORDING    = "⭕"
+ICON_PROCESSING   = "⏳"
+DOUBLE_TAP_WINDOW = 0.4   # segundos entre taps para considerar doble-toque
 
 PROVIDERS = {
     "groq":       {"name": "Groq (gratis)",  "url": "console.groq.com",       "placeholder": "gsk_..."},
@@ -76,9 +77,14 @@ def save_config(config):
     os.chmod(CONFIG_FILE, 0o600)
 
 # ── Diálogos ─────────────────────────────────────────────────────────────────
-# Registro global de procesos de diálogo activos para poder cerrarlos al salir
 _active_dialogs: list[subprocess.Popen] = []
 _dialogs_lock = threading.Lock()
+
+
+def _osa_escape(s: str) -> str:
+    """Escapa caracteres especiales para literales de cadena en AppleScript."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
 
 def _run_dialog(args):
     """Ejecuta un osascript, lo registra y devuelve stdout."""
@@ -96,7 +102,6 @@ def _run_dialog(args):
                 pass
 
 def close_all_dialogs():
-    """Cierra todos los diálogos abiertos."""
     with _dialogs_lock:
         for proc in list(_active_dialogs):
             try:
@@ -107,48 +112,47 @@ def close_all_dialogs():
 
 def dialog_input(prompt, default="", cancelable=True):
     buttons = '"Cancelar", "Continuar"' if cancelable else '"Continuar"'
+    safe_prompt  = _osa_escape(prompt)
+    safe_default = _osa_escape(default)
     return _run_dialog(["osascript", "-e",
         f'tell app "System Events"\n'
-        f'  set r to display dialog "{prompt}" default answer "{default}" '
+        f'  set r to display dialog "{safe_prompt}" default answer "{safe_default}" '
         f'with title "Whisper Dictation VP" buttons {{{buttons}}} default button "Continuar"\n'
         f'  if button returned of r is "Cancelar" then return ""\n'
         f'  return text returned of r\n'
         f'end tell'])
 
 def dialog_choice(prompt, *buttons):
-    # Filtrar el botón Cancelar de las opciones reales
-    options = [b for b in buttons if b != "Cancelar"]
+    options    = [b for b in buttons if b != "Cancelar"]
     has_cancel = "Cancelar" in buttons
+    safe_prompt = _osa_escape(prompt)
 
     if len(options) <= 2 and not has_cancel:
-        # Diálogo simple con botones (máx 3)
         btn_str = ", ".join(f'"{b}"' for b in buttons)
         return _run_dialog(["osascript", "-e",
             f'tell app "System Events" to return button returned of '
-            f'(display dialog "{prompt}" with title "Whisper Dictation VP" '
+            f'(display dialog "{safe_prompt}" with title "Whisper Dictation VP" '
             f'buttons {{{btn_str}}} default button "{buttons[-1]}")'])
     elif len(options) <= 2:
-        # Hasta 3 botones incluyendo Cancelar
         btn_str = ", ".join(f'"{b}"' for b in buttons)
         return _run_dialog(["osascript", "-e",
             f'tell app "System Events" to return button returned of '
-            f'(display dialog "{prompt}" with title "Whisper Dictation VP" '
+            f'(display dialog "{safe_prompt}" with title "Whisper Dictation VP" '
             f'buttons {{{btn_str}}} default button "{options[-1]}")'])
     else:
-        # Muchas opciones: usar choose from list
         items_str = ", ".join(f'"{o}"' for o in options)
-        cancel_str = "with cancel button" if has_cancel else ""
         result = _run_dialog(["osascript", "-e",
             f'set r to choose from list {{{items_str}}} '
-            f'with title "Whisper Dictation VP" with prompt "{prompt}" '
+            f'with title "Whisper Dictation VP" with prompt "{safe_prompt}" '
             f'OK button name "Seleccionar" cancel button name "Cancelar"\n'
             f'if r is false then return "Cancelar"\n'
             f'return item 1 of r'])
         return result if result else "Cancelar"
 
 def dialog_info(msg):
+    safe_msg = _osa_escape(msg)
     _run_dialog(["osascript", "-e",
-        f'tell app "System Events" to display dialog "{msg}" '
+        f'tell app "System Events" to display dialog "{safe_msg}" '
         f'with title "Whisper Dictation VP" buttons {{"OK"}} default button "OK"'])
 
 def play_sound(sound):
@@ -190,7 +194,7 @@ def transcribe(provider, client, path, language):
                 model="whisper-1", file=f, language=lang)
         return r.text.strip()
     elif provider == "deepgram":
-        from deepgram import PrerecordedOptions, FileSource
+        from deepgram import PrerecordedOptions
         with open(path, "rb") as f:
             data = f.read()
         options = PrerecordedOptions(model="nova-2", language=lang or "es")
@@ -211,16 +215,26 @@ class WhisperDictationApp(rumps.App):
 
     def __init__(self):
         super().__init__(ICON_IDLE, quit_button=None)
-        self.config   = load_config()
-        self.lock     = threading.Lock()
+        self.config      = load_config()
+        self.lock        = threading.Lock()   # protege recording + audio_frames
+        self.config_lock = threading.Lock()   # protege mutaciones del config
+
         self.recording    = False
         self.audio_frames = []
 
-        # Si no hay ningún proveedor configurado, pedir uno al arrancar
+        # Estado doble-toque
+        self._last_tap_time = 0.0
+        self._key_down      = False  # True mientras la tecla está físicamente presionada
+        self._stop_tap      = False  # True si el press actual fue para detener grabación
+
+        # Cola para despachar llamadas UI al main thread de forma segura
+        self._ui_queue = queue.Queue()
+        self._ui_timer = rumps.Timer(self._flush_ui_queue, 0.05)
+        self._ui_timer.start()
+
         if not self.config["providers"]:
             self._setup_provider(first_run=True)
 
-        # Si no hay proveedor activo, usar el primero disponible
         if not self.config["active_provider"] or \
            self.config["active_provider"] not in self.config["providers"]:
             self.config["active_provider"] = list(self.config["providers"].keys())[0]
@@ -234,7 +248,30 @@ class WhisperDictationApp(rumps.App):
             dtype=DTYPE, callback=self._audio_callback, blocksize=1024,
         )
         self.stream.start()
-        threading.Thread(target=self._start_listener, daemon=True).start()
+
+        self._listener = keyboard.Listener(
+            on_press=self._on_press, on_release=self._on_release)
+        self._listener.daemon = True
+        self._listener.start()
+
+    # ── UI dispatch (thread-safe) ─────────────────────────────────────────────
+
+    def _dispatch(self, fn, *args):
+        """Encola una llamada para ejecutarse en el main thread vía el timer."""
+        self._ui_queue.put((fn, args))
+
+    def _flush_ui_queue(self, _):
+        while True:
+            try:
+                fn, args = self._ui_queue.get_nowait()
+                fn(*args)
+            except queue.Empty:
+                break
+
+    def _set_title(self, icon):
+        self.title = icon
+
+    # ── Client & menu ─────────────────────────────────────────────────────────
 
     def _build_client(self):
         provider = self.config["active_provider"]
@@ -251,18 +288,22 @@ class WhisperDictationApp(rumps.App):
         history = self.config.get("history", [])
         if history:
             for i, item in enumerate(reversed(history)):
-                short = item[:50] + "..." if len(item) > 50 else item
-                history_menu.add(rumps.MenuItem(f"{i+1}. {short}",
-                    callback=lambda _, t=item: self._copy_history(t)))
+                short = item[:60] + "…" if len(item) > 60 else item
+                history_menu.add(rumps.MenuItem(
+                    f"{i+1}. {short}",
+                    callback=lambda _, t=item: threading.Thread(
+                        target=self._show_history_item, args=(t,), daemon=True
+                    ).start()
+                ))
         else:
             history_menu.add(rumps.MenuItem("(vacío)"))
 
         self.menu.clear()
         self.menu = [
-            rumps.MenuItem(f"Whisper Dictation VP v2.0"),
+            rumps.MenuItem("Whisper Dictation VP v2.2"),
             rumps.MenuItem(f"Proveedor: {provider_name}"),
             rumps.MenuItem(f"Idioma: {lang_name}"),
-            rumps.MenuItem(f"Tecla: {hotkey_name}"),
+            rumps.MenuItem(f"Tecla: {hotkey_name} (doble-toque)"),
             None,
             history_menu,
             None,
@@ -271,12 +312,46 @@ class WhisperDictationApp(rumps.App):
             rumps.MenuItem("Salir", callback=self._quit),
         ]
 
-    def _copy_history(self, text):
-        subprocess.run(["pbcopy"], input=text.encode("utf-8"))
+    # ── Historial interactivo ─────────────────────────────────────────────────
+
+    def _show_history_item(self, text):
+        """Muestra una transcripción del historial con opciones de acción."""
+        action = dialog_choice(
+            "¿Qué hacer con esta transcripción?",
+            "Cancelar", "Ver / Editar", "Copiar y pegar", "Copiar"
+        )
+        if action == "Copiar":
+            subprocess.run(["pbcopy"], input=text.encode("utf-8"))
+            play_sound("Tink")
+        elif action == "Copiar y pegar":
+            subprocess.run(["pbcopy"], input=text.encode("utf-8"))
+            subprocess.run(["osascript", "-e",
+                'tell application "System Events" to keystroke "v" using command down'])
+            play_sound("Pop")
+        elif action == "Ver / Editar":
+            edited = dialog_input("Transcripción (edita si lo necesitas):", default=text)
+            if edited:
+                subprocess.run(["pbcopy"], input=edited.encode("utf-8"))
+                play_sound("Tink")
+                # Actualizar historial con el texto editado
+                with self.config_lock:
+                    history = self.config.get("history", [])
+                    try:
+                        idx = history.index(text)
+                        history[idx] = edited
+                        self.config["history"] = history
+                        save_config(self.config)
+                    except ValueError:
+                        pass
+                self._dispatch(self._build_menu)
 
     # ── Configuración ─────────────────────────────────────────────────────────
 
     def _open_settings(self, _):
+        """Los diálogos de configuración corren en un hilo para no bloquear el run loop."""
+        threading.Thread(target=self._settings_thread, daemon=True).start()
+
+    def _settings_thread(self):
         choice = dialog_choice(
             "¿Qué quieres configurar?",
             "Cancelar", "Tecla de activación", "Idioma", "APIs"
@@ -289,9 +364,8 @@ class WhisperDictationApp(rumps.App):
             self._settings_hotkey()
 
     def _settings_apis(self):
-        providers = self.config["providers"]
-        configured = [PROVIDERS[p]["name"] for p in providers if p in PROVIDERS]
-        not_configured = [PROVIDERS[p]["name"] for p in PROVIDERS if p not in providers]
+        providers   = self.config["providers"]
+        configured  = [PROVIDERS[p]["name"] for p in providers if p in PROVIDERS]
 
         options = []
         if configured:
@@ -299,24 +373,27 @@ class WhisperDictationApp(rumps.App):
         options.append("Añadir nueva API")
         options.append("Cancelar")
 
-        choice = dialog_choice("APIs configuradas:\n" +
+        choice = dialog_choice(
+            "APIs configuradas:\n" +
             ("\n".join(f"• {n}" for n in configured) if configured else "(ninguna)") +
             "\n\n¿Qué quieres hacer?",
-            *reversed(options))
-
+            *reversed(options)
+        )
         if choice == "Añadir nueva API":
             self._setup_provider()
         elif choice == "Gestionar existentes":
             self._manage_providers()
 
     def _manage_providers(self):
-        providers = list(self.config["providers"].keys())
-        names = [PROVIDERS[p]["name"] for p in providers if p in PROVIDERS]
-        choice = dialog_choice("Selecciona el proveedor a gestionar:",
-            "Cancelar", *names)
+        # Sólo proveedores conocidos para mantener names/providers sincronizados
+        providers = [p for p in self.config["providers"] if p in PROVIDERS]
+        if not providers:
+            return
+        names  = [PROVIDERS[p]["name"] for p in providers]
+        choice = dialog_choice("Selecciona el proveedor a gestionar:", "Cancelar", *names)
         if not choice or choice == "Cancelar":
             return
-        provider = next((p for p in providers if PROVIDERS.get(p, {}).get("name") == choice), None)
+        provider = next((p for p in providers if PROVIDERS[p]["name"] == choice), None)
         if not provider:
             return
 
@@ -329,7 +406,7 @@ class WhisperDictationApp(rumps.App):
             self.config["active_provider"] = provider
             save_config(self.config)
             self._build_client()
-            self._build_menu()
+            self._dispatch(self._build_menu)
         elif action == "Cambiar API key":
             self._setup_provider(edit=provider)
         elif action == "Eliminar":
@@ -337,11 +414,13 @@ class WhisperDictationApp(rumps.App):
             if confirm == "Eliminar":
                 del self.config["providers"][provider]
                 if self.config["active_provider"] == provider:
-                    self.config["active_provider"] = list(self.config["providers"].keys())[0] \
+                    self.config["active_provider"] = (
+                        list(self.config["providers"].keys())[0]
                         if self.config["providers"] else ""
+                    )
                 save_config(self.config)
                 self._build_client()
-                self._build_menu()
+                self._dispatch(self._build_menu)
 
     def _setup_provider(self, first_run=False, edit=None):
         if edit:
@@ -351,11 +430,8 @@ class WhisperDictationApp(rumps.App):
             if not available:
                 dialog_info("Ya tienes todos los proveedores configurados.")
                 return
-            names = [PROVIDERS[p]["name"] for p in available]
-            choice = dialog_choice(
-                "Selecciona el proveedor de transcripción:",
-                "Cancelar", *names
-            )
+            names  = [PROVIDERS[p]["name"] for p in available]
+            choice = dialog_choice("Selecciona el proveedor de transcripción:", "Cancelar", *names)
             if not choice or choice == "Cancelar":
                 if first_run and not self.config["providers"]:
                     sys.exit(0)
@@ -364,7 +440,7 @@ class WhisperDictationApp(rumps.App):
             if not provider:
                 return
 
-        info = PROVIDERS[provider]
+        info    = PROVIDERS[provider]
         current = self.config["providers"].get(provider, "")
         api_key = dialog_input(
             f"API Key de {info['name']}\n({info['url']}):",
@@ -380,31 +456,27 @@ class WhisperDictationApp(rumps.App):
             self.config["active_provider"] = provider
         save_config(self.config)
         self._build_client()
-        self._build_menu()
+        self._dispatch(self._build_menu)
 
     def _settings_language(self):
-        names = list(LANGUAGES.values())
-        keys  = list(LANGUAGES.keys())
-        choice = dialog_choice("Selecciona el idioma de transcripción:",
-            "Cancelar", *names)
+        names  = list(LANGUAGES.values())
+        keys   = list(LANGUAGES.keys())
+        choice = dialog_choice("Selecciona el idioma de transcripción:", "Cancelar", *names)
         if not choice or choice == "Cancelar":
             return
-        lang = keys[names.index(choice)]
-        self.config["language"] = lang
+        self.config["language"] = keys[names.index(choice)]
         save_config(self.config)
-        self._build_menu()
+        self._dispatch(self._build_menu)
 
     def _settings_hotkey(self):
-        names = list(HOTKEY_NAMES.values())
-        keys  = list(HOTKEY_NAMES.keys())
-        choice = dialog_choice("Selecciona la tecla de activación:",
-            "Cancelar", *names)
+        names  = list(HOTKEY_NAMES.values())
+        keys   = list(HOTKEY_NAMES.keys())
+        choice = dialog_choice("Selecciona la tecla de activación:", "Cancelar", *names)
         if not choice or choice == "Cancelar":
             return
-        hk = keys[names.index(choice)]
-        self.config["hotkey"] = hk
+        self.config["hotkey"] = keys[names.index(choice)]
         save_config(self.config)
-        self._build_menu()
+        self._dispatch(self._build_menu)
 
     # ── Audio ─────────────────────────────────────────────────────────────────
 
@@ -413,77 +485,118 @@ class WhisperDictationApp(rumps.App):
             if self.recording:
                 self.audio_frames.append(indata.copy())
 
-    def _start_listener(self):
-        with keyboard.Listener(on_press=self._on_press, on_release=self._on_release) as l:
-            l.join()
-
     def _current_hotkey(self):
         return HOTKEYS.get(self.config.get("hotkey", "alt_r"), keyboard.Key.alt_r)
 
+    # ── Teclado — doble-toque para iniciar, toque simple para detener ─────────
+
     def _on_press(self, key):
-        if key == self._current_hotkey():
-            with self.lock:
-                if not self.recording:
-                    self.recording = True
-                    self.audio_frames.clear()
-            play_sound("Tink")
-            self.title = ICON_RECORDING
+        if key != self._current_hotkey():
+            return
+        if self._key_down:
+            return  # Ignorar key-repeat del SO
+        self._key_down  = True
+        self._stop_tap  = False
+
+        with self.lock:
+            if self.recording:
+                # Detener grabación en el primer press
+                self._stop_tap    = True
+                self.recording    = False
+                frames            = list(self.audio_frames)
+                self._dispatch(self._set_title, ICON_PROCESSING)
+                threading.Thread(target=self._process, args=(frames,), daemon=True).start()
 
     def _on_release(self, key):
-        if key == self._current_hotkey():
+        if key != self._current_hotkey():
+            return
+        self._key_down = False
+
+        if self._stop_tap:
+            # Este release pertenece al press que detuvo la grabación;
+            # no debe contar como primer tap del doble-toque.
+            self._stop_tap = False
+            return
+
+        now = time.time()
+        if now - self._last_tap_time <= DOUBLE_TAP_WINDOW:
+            # Doble-toque detectado → iniciar grabación
+            self._last_tap_time = 0.0
             with self.lock:
-                self.recording = False
-                frames = list(self.audio_frames)
-            self.title = ICON_PROCESSING
-            threading.Thread(target=self._process, args=(frames,), daemon=True).start()
+                self.recording = True
+                self.audio_frames.clear()
+            play_sound("Tink")
+            self._dispatch(self._set_title, ICON_RECORDING)
+        else:
+            # Primer tap — esperar al segundo
+            self._last_tap_time = now
+
+    # ── Procesado de audio ────────────────────────────────────────────────────
 
     def _process(self, frames):
+        path = None
         try:
             if not frames:
                 return
-            audio = np.concatenate(frames, axis=0)
+
+            audio    = np.concatenate(frames, axis=0)
             duration = len(audio) / SAMPLE_RATE
+
             if duration < 0.3:
+                play_sound("Funk")
+                print(f"⚠ Grabación demasiado corta ({duration:.2f}s), ignorada")
                 return
 
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
                 path = tmp.name
-            try:
-                with wave.open(path, "wb") as wf:
-                    wf.setnchannels(CHANNELS)
-                    wf.setsampwidth(2)
-                    wf.setframerate(SAMPLE_RATE)
-                    wf.writeframes(audio.tobytes())
-                text = transcribe(self.provider, self.client, path,
-                                  self.config.get("language", "es"))
-            finally:
-                os.unlink(path)
+            with wave.open(path, "wb") as wf:
+                wf.setnchannels(CHANNELS)
+                wf.setsampwidth(2)
+                wf.setframerate(SAMPLE_RATE)
+                wf.writeframes(audio.tobytes())
+
+            text = transcribe(self.provider, self.client, path,
+                              self.config.get("language", "es"))
 
             if text:
-                # Historial
-                history = self.config.get("history", [])
-                history.insert(0, text)
-                self.config["history"] = history[:HISTORY_MAX]
-                save_config(self.config)
-                self._build_menu()
+                with self.config_lock:
+                    history = self.config.get("history", [])
+                    history.insert(0, text)
+                    self.config["history"] = history[:HISTORY_MAX]
+                    save_config(self.config)
+                self._dispatch(self._build_menu)
 
-                # Pegar
                 subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
                 subprocess.run(["osascript", "-e",
                     'tell application "System Events" to keystroke "v" using command down'],
                     check=True)
                 play_sound("Pop")
                 print(f"✓ [{duration:.1f}s] {text}")
+            else:
+                play_sound("Funk")
+                print("⚠ Transcripción vacía — sin texto detectado")
+
         except Exception as e:
-            print(f"✗ Error: {e}")
+            play_sound("Basso")
+            print(f"✗ Error de transcripción: {e}")
         finally:
-            self.title = ICON_IDLE
+            if path and os.path.exists(path):
+                os.unlink(path)
+            self._dispatch(self._set_title, ICON_IDLE)
+
+    # ── Salir ─────────────────────────────────────────────────────────────────
 
     def _quit(self, _):
         close_all_dialogs()
+        self._ui_timer.stop()
+        try:
+            self._listener.stop()
+        except Exception:
+            pass
         self.stream.stop()
         self.stream.close()
         rumps.quit_application()
+
 
 if __name__ == "__main__":
     WhisperDictationApp().run()
