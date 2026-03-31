@@ -51,6 +51,157 @@ HOTKEY_NAMES = {
     "cmd":     "Command",
 }
 
+# ── Diálogo translúcido con NSVisualEffectView (vibrancy) ─────────────────────
+
+try:
+    import objc
+    from AppKit import (
+        NSObject, NSWindow, NSVisualEffectView, NSScrollView, NSTextView,
+        NSTextField, NSButton, NSFont, NSColor, NSApp,
+        NSWindowStyleMaskTitled, NSWindowStyleMaskClosable,
+        NSWindowStyleMaskFullSizeContentView, NSBackingStoreBuffered,
+        NSVisualEffectBlendingModeBehindWindow, NSVisualEffectStateActive,
+        NSBezelStyleRounded,
+    )
+    from Foundation import NSMakeRect, NSMakeSize
+    _VIBRANCY_OK = True
+except ImportError:
+    _VIBRANCY_OK = False
+
+
+if _VIBRANCY_OK:
+
+    class _BtnHandler(NSObject):
+        """Receptor ObjC para las acciones de los botones del diálogo vibrancy."""
+
+        def init(self):
+            self = objc.super(_BtnHandler, self).init()
+            if self is None:
+                return None
+            self._callback = None
+            return self
+
+        @objc.python_method
+        def set_callback(self, fn):
+            self._callback = fn
+
+        def buttonClicked_(self, sender):
+            if self._callback:
+                self._callback(int(sender.tag()))
+
+
+    class VibrancyTranscriptDialog:
+        """Ventana modal translúcida (NSVisualEffectView) para ver/editar transcripciones."""
+
+        W, H = 560, 350
+
+        def __init__(self, text):
+            self._text          = text
+            self._result_action = None
+            self._window        = None
+            self._text_view     = None
+            self._handler       = None
+            self._scroll        = None
+            self._build()
+
+        def _build(self):
+            # Ventana con barra de título transparente y contenido a tamaño completo
+            style = (
+                NSWindowStyleMaskTitled
+                | NSWindowStyleMaskClosable
+                | NSWindowStyleMaskFullSizeContentView
+            )
+            self._window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+                NSMakeRect(0, 0, self.W, self.H),
+                style,
+                NSBackingStoreBuffered,
+                False,
+            )
+            self._window.setTitle_("Whisper Dictation VP")
+            self._window.center()
+            self._window.setReleasedWhenClosed_(False)
+            self._window.setTitlebarAppearsTransparent_(True)
+            self._window.setMovableByWindowBackground_(True)
+
+            # Fondo vibrancy — translúcido respecto a lo que hay detrás de la ventana
+            fx = NSVisualEffectView.alloc().initWithFrame_(
+                NSMakeRect(0, 0, self.W, self.H)
+            )
+            fx.setMaterial_(12)  # NSVisualEffectMaterialWindowBackground
+            fx.setBlendingMode_(NSVisualEffectBlendingModeBehindWindow)
+            fx.setState_(NSVisualEffectStateActive)
+            self._window.setContentView_(fx)
+
+            # Label
+            lbl = NSTextField.alloc().initWithFrame_(
+                NSMakeRect(20, self.H - 50, self.W - 40, 20)
+            )
+            lbl.setStringValue_("Transcripción — edita si lo necesitas:")
+            lbl.setEditable_(False)
+            lbl.setSelectable_(False)
+            lbl.setBezeled_(False)
+            lbl.setDrawsBackground_(False)
+            lbl.setFont_(NSFont.boldSystemFontOfSize_(13))
+            lbl.setTextColor_(NSColor.labelColor())
+            fx.addSubview_(lbl)
+
+            # ScrollView + NSTextView editable
+            self._scroll = NSScrollView.alloc().initWithFrame_(
+                NSMakeRect(20, 62, self.W - 40, self.H - 90)
+            )
+            self._scroll.setBorderType_(2)  # NSBezelBorder
+            self._scroll.setHasVerticalScroller_(True)
+            self._scroll.setHasHorizontalScroller_(False)
+            self._scroll.setDrawsBackground_(False)
+
+            self._text_view = NSTextView.alloc().initWithFrame_(
+                NSMakeRect(0, 0, self.W - 60, self.H - 90)
+            )
+            self._text_view.setString_(self._text)
+            self._text_view.setFont_(NSFont.systemFontOfSize_(13))
+            self._text_view.setEditable_(True)
+            self._text_view.setRichText_(False)
+            self._text_view.setDrawsBackground_(False)
+            self._text_view.setTextContainerInset_(NSMakeSize(6, 8))
+            self._scroll.setDocumentView_(self._text_view)
+            fx.addSubview_(self._scroll)
+
+            # Handler de botones (NSObject compatible con ObjC actions)
+            self._handler = _BtnHandler.alloc().init()
+            self._handler.set_callback(self._on_button)
+
+            buttons = [
+                ("Cancelar",       20,              100, 0),
+                ("Copiar",         self.W - 230,    100, 1),
+                ("Copiar y pegar", self.W - 122,    115, 2),
+            ]
+            for title, x, w, tag in buttons:
+                btn = NSButton.alloc().initWithFrame_(NSMakeRect(x, 14, w, 32))
+                btn.setTitle_(title)
+                btn.setBezelStyle_(NSBezelStyleRounded)
+                btn.setTag_(tag)
+                btn.setTarget_(self._handler)
+                btn.setAction_(b"buttonClicked:")
+                if tag == 2:
+                    btn.setKeyEquivalent_("\r")   # Enter → Copiar y pegar
+                elif tag == 0:
+                    btn.setKeyEquivalent_("\x1b")  # Escape → Cancelar
+                fx.addSubview_(btn)
+
+        def _on_button(self, tag):
+            self._result_action = {0: None, 1: "Copiar", 2: "Copiar y pegar"}.get(tag)
+            NSApp.stopModal()
+            self._window.orderOut_(None)
+
+        def run(self):
+            """Muestra el diálogo modal. Devuelve (action, edited_text)."""
+            NSApp.activateIgnoringOtherApps_(True)
+            self._window.makeKeyAndOrderFront_(None)
+            NSApp.runModalForWindow_(self._window)
+            text = str(self._text_view.string()) if self._text_view else self._text
+            return self._result_action, text
+
+
 # ── Config ────────────────────────────────────────────────────────────────────
 
 def load_config():
@@ -75,7 +226,7 @@ def save_config(config):
         json.dump(config, f, indent=2)
     os.chmod(CONFIG_FILE, 0o600)
 
-# ── Diálogos ─────────────────────────────────────────────────────────────────
+# ── Diálogos osascript (configuración) ───────────────────────────────────────
 _active_dialogs: list[subprocess.Popen] = []
 _dialogs_lock = threading.Lock()
 
@@ -119,9 +270,8 @@ def dialog_input(prompt, default="", cancelable=True):
         f'  return text returned of r\n'
         f'end tell'])
 
-def dialog_text_view(text):
-    """Muestra el texto completo editable con botones Cancelar / Copiar / Copiar y pegar.
-    Devuelve (accion, texto_editado) o (None, None) si se cancela."""
+def dialog_text_view_fallback(text):
+    """Fallback osascript si PyObjC no está disponible."""
     safe_text = _osa_escape(text)
     result = _run_dialog(["osascript", "-e",
         f'tell app "System Events"\n'
@@ -135,9 +285,7 @@ def dialog_text_view(text):
     if not result or result == "CANCEL":
         return None, None
     parts = result.split("|", 1)
-    action     = parts[0]
-    edited     = parts[1] if len(parts) > 1 else text
-    return action, edited
+    return parts[0], parts[1] if len(parts) > 1 else text
 
 def dialog_choice(prompt, *buttons):
     options    = [b for b in buttons if b != "Cancelar"]
@@ -299,19 +447,18 @@ class WhisperDictationApp(rumps.App):
         hotkey_name     = HOTKEY_NAMES.get(self.config["hotkey"], self.config["hotkey"])
 
         # ── Submenú Proveedor ─────────────────────────────────────────────────
-        configured_providers = list(self.config["providers"].keys())
+        configured = list(self.config["providers"].keys())
         provider_menu = rumps.MenuItem("Proveedor")
-        for p in configured_providers:
-            name   = PROVIDERS.get(p, {}).get("name", p)
-            mark   = "✓ " if p == active_provider else "    "
-            if len(configured_providers) > 1:
-                item = rumps.MenuItem(
+        for p in configured:
+            name = PROVIDERS.get(p, {}).get("name", p)
+            mark = "✓ " if p == active_provider else "    "
+            if len(configured) > 1:
+                provider_menu.add(rumps.MenuItem(
                     f"{mark}{name}",
                     callback=lambda _, prov=p: self._switch_provider(prov)
-                )
+                ))
             else:
-                item = rumps.MenuItem(f"{mark}{name}")
-            provider_menu.add(item)
+                provider_menu.add(rumps.MenuItem(f"{mark}{name}"))
 
         # ── Submenú Idioma ────────────────────────────────────────────────────
         lang_menu = rumps.MenuItem("Idioma")
@@ -358,7 +505,7 @@ class WhisperDictationApp(rumps.App):
             rumps.MenuItem("Salir", callback=self._quit),
         ]
 
-    # ── Cambio rápido de proveedor e idioma desde el menú ─────────────────────
+    # ── Cambio rápido desde el menú ───────────────────────────────────────────
 
     def _switch_provider(self, provider):
         if provider == self.config["active_provider"]:
@@ -378,14 +525,33 @@ class WhisperDictationApp(rumps.App):
     # ── Historial interactivo ─────────────────────────────────────────────────
 
     def _show_history_item(self, text):
-        """Muestra la transcripción directamente editable y actúa según el botón."""
-        action, edited = dialog_text_view(text)
+        """Abre la transcripción en un diálogo translúcido (o fallback osascript)."""
+        if _VIBRANCY_OK:
+            result_holder = [None, text]
+            done = threading.Event()
+
+            def show_on_main():
+                try:
+                    dlg = VibrancyTranscriptDialog(text)
+                    action, edited = dlg.run()
+                    result_holder[0] = action
+                    result_holder[1] = edited
+                except Exception as e:
+                    print(f"⚠ Vibrancy dialog error: {e}")
+                finally:
+                    done.set()
+
+            self._dispatch(show_on_main)
+            done.wait()
+            action, edited = result_holder
+        else:
+            action, edited = dialog_text_view_fallback(text)
+
         if action is None:
             return
 
         target = edited if edited else text
-        if action in ("Copiar", "Copiar y pegar"):
-            subprocess.run(["pbcopy"], input=target.encode("utf-8"))
+        subprocess.run(["pbcopy"], input=target.encode("utf-8"))
         if action == "Copiar y pegar":
             subprocess.run(["osascript", "-e",
                 'tell application "System Events" to keystroke "v" using command down'])
@@ -393,7 +559,7 @@ class WhisperDictationApp(rumps.App):
         else:
             play_sound("Tink")
 
-        # Actualizar historial si el texto fue editado
+        # Actualizar historial si se editó el texto
         if edited and edited != text:
             with self.config_lock:
                 history = self.config.get("history", [])
@@ -412,7 +578,7 @@ class WhisperDictationApp(rumps.App):
             save_config(self.config)
         self._dispatch(self._build_menu)
 
-    # ── Configuración (APIs y tecla) ──────────────────────────────────────────
+    # ── Configuración ─────────────────────────────────────────────────────────
 
     def _open_settings(self, _):
         threading.Thread(target=self._settings_thread, daemon=True).start()
@@ -538,7 +704,7 @@ class WhisperDictationApp(rumps.App):
     def _current_hotkey(self):
         return HOTKEYS.get(self.config.get("hotkey", "alt_r"), keyboard.Key.alt_r)
 
-    # ── Teclado — doble-toque para iniciar, toque simple para detener ─────────
+    # ── Teclado ───────────────────────────────────────────────────────────────
 
     def _on_press(self, key):
         if key != self._current_hotkey():
@@ -592,7 +758,7 @@ class WhisperDictationApp(rumps.App):
                 print(f"⚠ Grabación demasiado corta ({duration:.2f}s), ignorada")
                 return
 
-            # Detección de silencio: RMS bajo → no enviar a la API
+            # Detección de silencio: sin voz → no llamar a la API
             rms = np.sqrt(np.mean(audio.astype(np.float32) ** 2))
             if rms < 300:
                 print(f"⚠ Audio silencioso (RMS={rms:.0f}), ignorado")
