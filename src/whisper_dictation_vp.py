@@ -394,14 +394,8 @@ class WhisperDictationApp(rumps.App):
         self._build_client()
         self._build_menu()
 
-        try:
-            device_info = sd.query_devices(None, 'input')
-            self._capture_rate = int(device_info['default_samplerate'])
-        except Exception:
-            self._capture_rate = SAMPLE_RATE
-
         self.stream = sd.InputStream(
-            samplerate=self._capture_rate, channels=CHANNELS,
+            samplerate=SAMPLE_RATE, channels=CHANNELS,
             dtype=DTYPE, callback=self._audio_callback, blocksize=1024,
         )
         self.stream.start()
@@ -742,18 +736,6 @@ class WhisperDictationApp(rumps.App):
                 return
 
             audio    = np.concatenate(frames, axis=0)
-
-            # Remuestrear a 16kHz si la captura fue a otra frecuencia (evita
-            # el resampling interno de macOS que degrada la calidad)
-            if self._capture_rate != SAMPLE_RATE:
-                flat = audio.flatten().astype(np.float32)
-                n_out = int(len(flat) * SAMPLE_RATE / self._capture_rate)
-                audio = np.interp(
-                    np.linspace(0, len(flat) - 1, n_out),
-                    np.arange(len(flat)),
-                    flat
-                ).astype(np.int16).reshape(-1, 1)
-
             duration = len(audio) / SAMPLE_RATE
 
             if duration < 0.3:
@@ -761,10 +743,9 @@ class WhisperDictationApp(rumps.App):
                 print(f"⚠ Grabación demasiado corta ({duration:.2f}s), ignorada")
                 return
 
-            # Detección de silencio: sin voz → no llamar a la API
             rms = np.sqrt(np.mean(audio.astype(np.float32) ** 2))
-            if rms < 300:
-                print(f"⚠ Audio silencioso (RMS={rms:.0f}), ignorado")
+            if rms < 2:
+                print(f"⚠ Silencio detectado (RMS={rms:.1f}), ignorado")
                 return
 
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
