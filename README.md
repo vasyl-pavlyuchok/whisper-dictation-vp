@@ -2,7 +2,7 @@
 
 Dictado por voz para macOS usando inteligencia artificial. Doble-toque **Option derecho** para iniciar la grabación, toque simple para detener — el texto aparece pegado automáticamente en cualquier app.
 
-Diseñado por **Vasyl Pavlyuchok** & **Claude** — v2.3
+Diseñado por **Vasyl Pavlyuchok** & **Claude** — v2.3.1
 
 ---
 
@@ -105,7 +105,7 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
-### v2.3
+### v2.3.1
 - **Submenú Proveedor** — cambia de proveedor directamente desde el menú, con checkmark en el activo
 - **Submenú Idioma** — cambia el idioma directamente desde el menú, sin pasar por Configuración
 - **Historial mejorado** — clic abre la transcripción completa directamente, editable, con botones Copiar / Copiar y pegar
