@@ -219,7 +219,7 @@ as_user launchctl load "$PLIST" 2>/dev/null || true
 
 # ── 8. Instrucciones de Accesibilidad ────────────────────────────────────────
 dialog_ok \
-"✅ Whisper Dictation VP 2.1 instalado correctamente.
+"✅ Whisper Dictation VP 2.2 instalado correctamente.
 
 PASO OBLIGATORIO — Permiso de Accesibilidad:
 
@@ -235,7 +235,7 @@ Para que el atajo de teclado funcione debes dar permiso a Terminal:
 Sin este permiso la tecla de dictado no funcionará.
 
 Tecla predeterminada: Option derecho
-(mantener para grabar, soltar para transcribir y pegar)" \
+(doble-toque para iniciar, toque simple para detener)" \
 "Whisper Dictation VP instalado" "note"
 
 # ── 9. Lanzar la app al finalizar ────────────────────────────────────────────
