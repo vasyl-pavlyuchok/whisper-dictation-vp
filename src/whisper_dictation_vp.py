@@ -42,13 +42,17 @@ HOTKEYS = {
     "alt_r":   keyboard.Key.alt_r,
     "alt":     keyboard.Key.alt,
     "ctrl":    keyboard.Key.ctrl,
+    "ctrl_l":  keyboard.Key.ctrl_l,
     "cmd":     keyboard.Key.cmd,
+    "cmd_l":   keyboard.Key.cmd_l,
 }
 HOTKEY_NAMES = {
     "alt_r":   "Option derecho",
     "alt":     "Option izquierdo",
     "ctrl":    "Control",
+    "ctrl_l":  "Control izquierdo",
     "cmd":     "Command",
+    "cmd_l":   "Command izquierdo",
 }
 
 # ── Diálogo translúcido con NSVisualEffectView (vibrancy) ─────────────────────
