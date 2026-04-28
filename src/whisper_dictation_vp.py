@@ -2,7 +2,7 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v2.5
+Diseñado por Vasyl Pavlyuchok & Claude — v2.5.1
 """
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
@@ -327,7 +327,7 @@ def build_client(provider, api_key):
         return OpenAI(api_key=api_key)
     elif provider == "deepgram":
         from deepgram import DeepgramClient
-        return DeepgramClient(api_key)
+        return DeepgramClient(api_key=api_key)
     elif provider == "assemblyai":
         import assemblyai as aai
         aai.settings.api_key = api_key
@@ -351,19 +351,25 @@ def transcribe(provider, client, path, language):
                 model="whisper-1", file=f, language=lang)
         return r.text.strip()
     elif provider == "deepgram":
-        from deepgram import PrerecordedOptions
         with open(path, "rb") as f:
             data = f.read()
-        options = PrerecordedOptions(model="nova-2", language=lang or "es")
-        response = client.listen.prerecorded.v("1").transcribe_file(
-            {"buffer": data, "mimetype": "audio/wav"}, options)
-        return response["results"]["channels"][0]["alternatives"][0]["transcript"].strip()
+        response = client.listen.v1.media.transcribe_file(
+            request=data,
+            model="nova-2",
+            language=lang or "es",
+            smart_format=True,
+        )
+        return response.results.channels[0].alternatives[0].transcript.strip()
     elif provider == "assemblyai":
         import assemblyai as aai
-        config = aai.TranscriptionConfig(language_code=lang or "es")
-        t = aai.Transcriber()
-        result = t.transcribe(path, config=config)
-        return result.text.strip()
+        config = aai.TranscriptionConfig(
+            language_code=lang or "es",
+            speech_model=aai.SpeechModel.universal,
+        )
+        result = aai.Transcriber().transcribe(path, config=config)
+        if result.status == aai.TranscriptStatus.error:
+            raise RuntimeError(f"AssemblyAI error: {result.error}")
+        return (result.text or "").strip()
     return ""
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -492,7 +498,7 @@ class WhisperDictationApp(rumps.App):
         # ── Menú principal ────────────────────────────────────────────────────
         self.menu.clear()
         self.menu = [
-            rumps.MenuItem("Whisper Dictation VP v2.5"),
+            rumps.MenuItem("Whisper Dictation VP v2.5.1"),
             None,
             provider_menu,
             lang_menu,
