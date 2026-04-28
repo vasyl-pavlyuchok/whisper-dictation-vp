@@ -2,7 +2,7 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v2.4
+Diseñado por Vasyl Pavlyuchok & Claude — v2.5
 """
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
@@ -469,12 +469,18 @@ class WhisperDictationApp(rumps.App):
         if history:
             for item in history:
                 short = item[:65] + "…" if len(item) > 65 else item
-                history_menu.add(rumps.MenuItem(
-                    short,
+                item_menu = rumps.MenuItem(short)
+                item_menu.add(rumps.MenuItem(
+                    "Copiar",
+                    callback=lambda _, t=item: self._copy_history_item(t)
+                ))
+                item_menu.add(rumps.MenuItem(
+                    "Abrir / Editar",
                     callback=lambda _, t=item: threading.Thread(
                         target=self._show_history_item, args=(t,), daemon=True
                     ).start()
                 ))
+                history_menu.add(item_menu)
             history_menu.add(None)
             history_menu.add(rumps.MenuItem(
                 "Limpiar historial",
@@ -486,7 +492,7 @@ class WhisperDictationApp(rumps.App):
         # ── Menú principal ────────────────────────────────────────────────────
         self.menu.clear()
         self.menu = [
-            rumps.MenuItem("Whisper Dictation VP v2.4"),
+            rumps.MenuItem("Whisper Dictation VP v2.5"),
             None,
             provider_menu,
             lang_menu,
@@ -517,6 +523,10 @@ class WhisperDictationApp(rumps.App):
         self._build_menu()
 
     # ── Historial interactivo ─────────────────────────────────────────────────
+
+    def _copy_history_item(self, text):
+        subprocess.run(["pbcopy"], input=text.encode("utf-8"))
+        play_sound("Tink")
 
     def _show_history_item(self, text):
         """Abre la transcripción en un diálogo translúcido (o fallback osascript)."""
