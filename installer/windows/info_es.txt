@@ -1,0 +1,47 @@
+WHISPER DICTATION VP — LEE ESTO ANTES DE CONTINUAR (1 minuto)
+
+═══ QUÉ ES ═══
+
+Dicta en vez de escribir, en cualquier aplicación de tu PC:
+doble-toque en Alt izquierdo para grabar, habla, un toque para
+parar — y el texto aparece donde tenías el cursor. Mientras
+grabas verás un indicador flotante con un micrófono.
+
+═══ GRATIS, PARA SIEMPRE ═══
+
+La app funciona con la API GRATUITA de Groq. En el primer
+arranque te pedirá una clave: se crea en console.groq.com en
+1 minuto (cuenta gratuita → API Keys → Create API Key). Sin
+suscripciones ni pagos: meses de uso diario sin tocar límites.
+
+═══ HABLA EN TU IDIOMA (¡O EN 16!) ═══
+
+Por defecto la app DETECTA AUTOMÁTICAMENTE el idioma en el que
+hablas, dictado a dictado (un idioma por dictado): español,
+inglés, ucraniano, francés, alemán, italiano, portugués, chino,
+ruso, árabe, hindi, japonés, coreano, turco, polaco y neerlandés.
+También puedes fijar un idioma concreto desde el menú del icono
+de la bandeja del sistema.
+
+Extras que descubrirás en ese menú: Formato IA (limpia muletillas
+y puntuación con IA, gratis), diccionario personal para nombres
+propios, historial de dictados y avisos de nuevas versiones.
+
+═══ IMPORTANTE: EL AVISO AZUL DE WINDOWS ═══
+
+Es posible que Windows te haya mostrado (o te muestre) un aviso
+azul de SmartScreen: «Windows protegió su PC». ES NORMAL Y
+ESPERADO, y queremos que sepas por qué:
+
+Windows solo omite ese aviso si el desarrollador paga un
+certificado de firma de código (200–400 € CADA AÑO). Esta
+aplicación es gratuita y de código abierto — la hicimos para que
+cualquiera pueda dictar sin pagar, así que no tiene sentido pagar
+ese certificado solo para quitar un aviso.
+
+Si te aparece: pulsa «Más información» y después «Ejecutar de
+todas formas». Solo lo pide la primera vez. El código fuente es
+público y verificable en:
+github.com/vasyl-pavlyuchok/whisper-dictation-vp
+
+Diseñado por Vasyl Pavlyuchok & Claude · Licencia MIT

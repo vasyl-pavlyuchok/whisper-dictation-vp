@@ -1,0 +1,46 @@
+WHISPER DICTATION VP — PLEASE READ BEFORE CONTINUING (1 minute)
+
+═══ WHAT IT IS ═══
+
+Dictate instead of typing, into any application on your PC:
+double-tap left Alt to record, speak, single tap to stop — and
+the text appears right where your cursor was. While recording
+you'll see a floating indicator with a microphone.
+
+═══ FREE, FOREVER ═══
+
+The app runs on Groq's FREE API. On first launch it will ask for
+a key: create one at console.groq.com in 1 minute (free account →
+API Keys → Create API Key). No subscriptions, no payments —
+months of daily use without hitting any limit.
+
+═══ SPEAK YOUR LANGUAGE (OR 16 OF THEM!) ═══
+
+By default the app AUTOMATICALLY DETECTS the language you speak,
+dictation by dictation (one language per dictation): Spanish,
+English, Ukrainian, French, German, Italian, Portuguese, Chinese,
+Russian, Arabic, Hindi, Japanese, Korean, Turkish, Polish and
+Dutch. You can also pin a specific language from the tray icon
+menu.
+
+Extras you'll find in that menu: AI Format (cleans filler words
+and punctuation with AI, free), a personal dictionary for proper
+nouns, dictation history and new-version notices.
+
+═══ IMPORTANT: THE BLUE WINDOWS WARNING ═══
+
+Windows may have shown you (or may show you) a blue SmartScreen
+warning: "Windows protected your PC". THIS IS NORMAL AND
+EXPECTED, and we want you to know why:
+
+Windows only skips that warning if the developer pays for a code
+signing certificate (€200–400 EVERY YEAR). This application is
+free and open source — we built it so anyone can dictate without
+paying, so paying for that certificate just to remove a warning
+makes no sense.
+
+If it appears: click "More info" and then "Run anyway". It's only
+asked once. The source code is public and verifiable at:
+github.com/vasyl-pavlyuchok/whisper-dictation-vp
+
+Designed by Vasyl Pavlyuchok & Claude · MIT License

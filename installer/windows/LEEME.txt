@@ -1,0 +1,60 @@
+════════════════════════════════════════════════════════════════
+ WHISPER DICTATION VP — LÉEME / README
+════════════════════════════════════════════════════════════════
+
+── ESPAÑOL ──────────────────────────────────────────────────────
+
+⚠ AVISO AZUL DE WINDOWS (SmartScreen): al ejecutar
+  WhisperDictationVP.exe, Windows mostrará «Windows protegió su
+  PC». ES NORMAL: la app no está firmada porque el certificado de
+  firma cuesta 200–400 €/año y esta app es gratuita y de código
+  abierto. Para continuar: pulsa «Más información» → «Ejecutar de
+  todas formas». Solo se pide la primera vez.
+
+CÓMO SE USA
+  1. Ejecuta WhisperDictationVP.exe (icono en la bandeja, junto
+     al reloj)
+  2. Primera vez: crea tu clave GRATUITA en console.groq.com
+     (1 minuto) y pégala cuando la app la pida
+  3. Doble-toque en ALT IZQUIERDO para grabar (verás un indicador
+     flotante con un micrófono), un toque para parar — el texto
+     se pega donde tenías el cursor
+
+IDIOMAS: detección automática (un idioma por dictado) o fija uno
+de 16: español, inglés, ucraniano, francés, alemán, italiano,
+portugués, chino, ruso, árabe, hindi, japonés, coreano, turco,
+polaco, neerlandés.
+
+¿PROBLEMAS? El log de diagnóstico está en
+C:\Users\<tu usuario>\whisper_dictation_vp.log
+
+── ENGLISH ──────────────────────────────────────────────────────
+
+⚠ BLUE WINDOWS WARNING (SmartScreen): when running
+  WhisperDictationVP.exe, Windows will show "Windows protected
+  your PC". THIS IS NORMAL: the app is unsigned because code
+  signing certificates cost €200–400/year and this app is free
+  and open source. To continue: click "More info" → "Run anyway".
+  Only asked once.
+
+HOW TO USE
+  1. Run WhisperDictationVP.exe (icon in the tray, next to the
+     clock)
+  2. First time: create your FREE key at console.groq.com
+     (1 minute) and paste it when the app asks
+  3. Double-tap LEFT ALT to record (you'll see a floating
+     microphone indicator), single tap to stop — the text is
+     pasted where your cursor was
+
+LANGUAGES: automatic detection (one language per dictation) or
+pin one of 16: Spanish, English, Ukrainian, French, German,
+Italian, Portuguese, Chinese, Russian, Arabic, Hindi, Japanese,
+Korean, Turkish, Polish, Dutch.
+
+ISSUES? The diagnostic log lives at
+C:\Users\<your user>\whisper_dictation_vp.log
+
+════════════════════════════════════════════════════════════════
+ Vasyl Pavlyuchok & Claude · MIT ·
+ github.com/vasyl-pavlyuchok/whisper-dictation-vp
+════════════════════════════════════════════════════════════════

@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.4.1
+Diseñado por Vasyl Pavlyuchok & Claude — v3.5.0
 """
 
-APP_VERSION = "3.4.1"
+APP_VERSION = "3.5.0"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -304,24 +304,40 @@ def ai_cleanup(provider, client, text, dictionary=None):
 # ── Indicador flotante de estado ──────────────────────────────────────────────
 
 class StatusOverlay:
-    """Píldora flotante siempre visible (abajo-centro) mientras se graba o
-    transcribe — el icono de la bandeja de Windows suele quedar oculto tras
-    la flecha, así que hace falta feedback visual en pantalla."""
+    """Indicador flotante minimalista: SOLO un icono (sin texto, independiente
+    del idioma). Micrófono blanco sobre rojo al grabar; spinner sobre ámbar
+    al transcribir. Siempre visible abajo-centro — el icono de la bandeja de
+    Windows suele quedar oculto tras la flecha."""
 
-    STYLES = {
-        "recording":  ("●  Grabando…",      "#c62828"),
-        "processing": ("…  Transcribiendo", "#a8741a"),
-    }
+    COLORS = {"recording": "#c62828", "processing": "#a8741a"}
+    ICONS  = {"recording": "mic", "processing": "loader-circle"}
+    SIZE   = 44   # lado de la píldora
+    ICON   = 24   # lado del icono
 
     def __init__(self):
         import queue as _queue
         self._queue = _queue.Queue()
+        self._images = {}
         threading.Thread(target=self._run, daemon=True).start()
+
+    def _icon_image(self, name, size):
+        """PNG de Lucide (negro) → blanco, como PhotoImage de tkinter."""
+        base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+        for candidate in (os.path.join(base, "icons", f"{name}.png"),
+                          os.path.join(base, "..", "app", "icons", f"{name}.png")):
+            if os.path.exists(candidate):
+                from PIL import Image as PILImage
+                from PIL import ImageTk
+                img = PILImage.open(candidate).convert("RGBA").resize(
+                    (size, size), PILImage.LANCZOS)
+                white = PILImage.new("RGBA", img.size, (255, 255, 255, 255))
+                white.putalpha(img.getchannel("A"))
+                return ImageTk.PhotoImage(white, master=self.root)
+        return None
 
     def _run(self):
         try:
             import tkinter as tk
-            self._tk = tk
             self.root = tk.Tk()
             self.root.withdraw()
             self.root.overrideredirect(True)
@@ -330,10 +346,8 @@ class StatusOverlay:
                 self.root.attributes("-alpha", 0.93)
             except Exception:
                 pass
-            self.label = tk.Label(self.root, text="", fg="white",
-                                  font=("Segoe UI", 11, "bold"),
-                                  padx=16, pady=7)
-            self.label.pack()
+            self.label = tk.Label(self.root, bd=0)
+            self.label.pack(fill="both", expand=True)
             self._poll()
             self.root.mainloop()
         except Exception as e:
@@ -348,24 +362,35 @@ class StatusOverlay:
         self.root.after(120, self._poll)
 
     def _apply(self, state):
-        style = self.STYLES.get(state)
-        if not style:
+        color = self.COLORS.get(state)
+        if not color:
             self.root.withdraw()
             return
-        text, color = style
-        self.label.config(text=text, bg=color)
+        if state not in self._images:
+            try:
+                self._images[state] = self._icon_image(self.ICONS[state], self.ICON)
+            except Exception as e:
+                dbg(f"overlay icono {state}: {e}")
+                self._images[state] = None
+        img = self._images[state]
+        if img is not None:
+            self.label.config(image=img, text="", bg=color,
+                              width=self.SIZE, height=self.SIZE)
+        else:
+            # Fallback sin PIL: punto blanco
+            self.label.config(image="", text="●", fg="white", bg=color,
+                              font=("Segoe UI", 16))
         self.root.configure(bg=color)
-        self.root.update_idletasks()
-        w = self.label.winfo_reqwidth()
-        h = self.label.winfo_reqheight()
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{sh - h - 70}")
+        self.root.geometry(f"{self.SIZE}x{self.SIZE}"
+                           f"+{(sw - self.SIZE) // 2}+{sh - self.SIZE - 70}")
         self.root.deiconify()
         self.root.lift()
 
     def set_state(self, state):
         self._queue.put(state)
+
 
 # ── Iconos de bandeja (generados con PIL) ─────────────────────────────────────
 

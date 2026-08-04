@@ -94,12 +94,11 @@ Solo necesitas **una** API key para empezar. **Recomendado: Groq** — es gratui
 
 ## Instalación en Windows (beta)
 
-1. Descarga `WhisperDictationVP-Windows.zip` desde [Releases](../../releases/latest)
-2. Descomprime y ejecuta `WhisperDictationVP.exe`
-3. **SmartScreen mostrará un aviso azul** («Windows protegió su PC») porque la app no está firmada — es normal en software open source: pulsa **«Más información» → «Ejecutar de todas formas»**. Solo lo pide la primera vez.
-4. El icono aparece en la bandeja del sistema; en el primer arranque te pedirá tu API key
-5. Doble-toque en **Alt izquierdo** para grabar, toque simple para detener — mientras grabas verás una **píldora flotante** «● Grabando…» abajo en el centro de la pantalla
-6. *(Opcional)* Para que arranque sola al encender: `Win+R` → `shell:startup` → pega ahí un acceso directo al exe
+1. Descarga **`WhisperDictationVP-Windows-Setup.exe`** desde [Releases](../../releases/latest) *(o el `.zip` si prefieres la versión portable)*
+2. **SmartScreen mostrará un aviso azul** («Windows protegió su PC») porque la app no está firmada — los certificados de firma cuestan 200–400 €/año y esta app es gratuita y open source: pulsa **«Más información» → «Ejecutar de todas formas»**. Solo lo pide la primera vez.
+3. El instalador te deja **elegir idioma** (español/inglés), te explica lo esencial (API gratuita de Groq, los 16 idiomas con detección automática) y ofrece **inicio automático con Windows**
+4. En el primer arranque la app te pedirá tu API key de Groq
+5. Doble-toque en **Alt izquierdo** para grabar, toque simple para detener — mientras grabas verás un **indicador flotante minimalista** (micrófono en rojo; spinner en ámbar al transcribir)
 
 > **Consejos**: en teclados españoles el Alt derecho es AltGr — si prefieres esa tecla, elígela en el menú del icono. Si no transcribe nada, revisa **Configuración → Privacidad → Micrófono → «Permitir que las aplicaciones de escritorio accedan al micrófono»**, y consulta el log de diagnóstico en `%USERPROFILE%\whisper_dictation_vp.log` (ábrelo con el Bloc de notas).
 
@@ -161,6 +160,12 @@ rm -f ~/.whisper_dictation_vp.json
 ---
 
 ## Changelog
+
+### v3.5.0 (solo Windows — en Mac puedes ignorar esta actualización)
+- **Instalador de verdad (`WhisperDictationVP-Windows-Setup.exe`)** — asistente Inno Setup con selección de idioma (ES/EN), página informativa obligatoria que explica la API gratuita de Groq, los 16 idiomas con detección automática y el aviso de SmartScreen (y por qué aparece: los certificados cuestan 200–400 €/año y esta app es gratuita), instalación por usuario sin permisos de administrador, y opción de inicio automático con Windows
+- **Indicador flotante minimalista de solo iconos** — micrófono Lucide blanco sobre rojo al grabar, spinner sobre ámbar al transcribir; sin texto: universal en cualquier idioma
+- **LEEME.txt bilingüe dentro del zip portable** — con la explicación de SmartScreen para leer antes de ejecutar
+- **Icono propio de la app** en el exe, la barra de tareas y el instalador
 
 ### v3.4.1 (solo Windows — en Mac puedes ignorar esta actualización)
 - **Indicador flotante «● Grabando… / Transcribiendo»** — píldora siempre visible abajo-centro, porque el icono de la bandeja de Windows suele quedar oculto tras la flecha

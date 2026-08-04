@@ -59,18 +59,29 @@ jobs:
 
       - name: Compilar ejecutable
         run: |
-          pyinstaller --noconfirm --onefile --noconsole --name WhisperDictationVP src/whisper_dictation_win.py
+          pyinstaller --noconfirm --onefile --noconsole --name WhisperDictationVP --icon app/AppIcon.ico --add-data "app/icons;icons" src/whisper_dictation_win.py
 
-      - name: Empaquetar zip
+      - name: Empaquetar zip portable (exe + LEEME)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path pkgout | Out-Null
-          Compress-Archive -Path dist/WhisperDictationVP.exe -DestinationPath pkgout/WhisperDictationVP-Windows.zip
+          Compress-Archive -Path dist/WhisperDictationVP.exe, installer/windows/LEEME.txt -DestinationPath pkgout/WhisperDictationVP-Windows.zip
+
+      - name: Compilar instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          $ver = "${{ github.ref_name }}".TrimStart("v")
+          if (-not $ver) { $ver = "0.0.0" }
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVer=$ver installer\windows\installer.iss
+          Move-Item installer\windows\output\WhisperDictationVP-Windows-Setup.exe pkgout\
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: pkgout/WhisperDictationVP-Windows.zip
+          path: |
+            pkgout/WhisperDictationVP-Windows.zip
+            pkgout/WhisperDictationVP-Windows-Setup.exe
           if-no-files-found: error
 
   release:
@@ -100,6 +111,9 @@ jobs:
             |---------|---------|
             | macOS Apple Silicon (M1/M2/M3/M4) | `WhisperDictationVP-AppleSilicon.pkg` |
             | macOS Intel | `WhisperDictationVP-Intel.pkg` |
-            | Windows 10/11 (beta) | `WhisperDictationVP-Windows.zip` |
+            | Windows 10/11 — instalador (recomendado) | `WhisperDictationVP-Windows-Setup.exe` |
+            | Windows 10/11 — portable | `WhisperDictationVP-Windows.zip` |
+
+            ⚠️ **Windows mostrará el aviso azul de SmartScreen** («Windows protegió su PC») porque la app no está firmada — los certificados cuestan 200–400 €/año y esta app es gratuita y open source. Pulsa **«Más información» → «Ejecutar de todas formas»**. Solo se pide la primera vez.
 
             La app de macOS es 100% nativa: no necesitas Python instalado ni se abre ninguna Terminal.

@@ -91,12 +91,11 @@ You only need **one** API key to get started. **Recommended: Groq** — free, bl
 
 ## Windows installation (beta)
 
-1. Download `WhisperDictationVP-Windows.zip` from [Releases](../../releases/latest)
-2. Unzip and run `WhisperDictationVP.exe`
-3. **SmartScreen will show a blue warning** ("Windows protected your PC") because the app is unsigned — normal for open source: click **"More info" → "Run anyway"**. Only asked once.
-4. The icon appears in the system tray; on first launch it asks for your API key
-5. Double-tap **left Alt** to record, single tap to stop — while recording you'll see a **floating pill** "● Recording…" at the bottom center of the screen
-6. *(Optional)* To start at login: `Win+R` → `shell:startup` → drop a shortcut to the exe there
+1. Download **`WhisperDictationVP-Windows-Setup.exe`** from [Releases](../../releases/latest) *(or the `.zip` for the portable version)*
+2. **SmartScreen will show a blue warning** ("Windows protected your PC") because the app is unsigned — code signing certificates cost €200–400/year and this app is free and open source: click **"More info" → "Run anyway"**. Only asked once.
+3. The installer lets you **choose a language** (Spanish/English), explains the essentials (Groq's free API, the 16 languages with auto-detection) and offers **auto-start with Windows**
+4. On first launch the app asks for your Groq API key
+5. Double-tap **left Alt** to record, single tap to stop — while recording you'll see a **minimalist floating indicator** (red microphone; amber spinner while transcribing)
 
 > **Tips**: on Spanish keyboards the right Alt is AltGr — pick it from the tray menu if you prefer that key. If nothing gets transcribed, check **Settings → Privacy → Microphone → "Allow desktop apps to access your microphone"**, and see the diagnostic log at `%USERPROFILE%\whisper_dictation_vp.log`.
 
