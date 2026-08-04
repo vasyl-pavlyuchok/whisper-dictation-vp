@@ -94,7 +94,7 @@ inglés tiene que existir sí o sí para llegar a las masas:
   Cualquier repo nuevo que se publique debe seguir este mismo patrón.
 
 La página de la app en vasylpavlyuchok.com debe reflejar versiones/funciones
-nuevas — usa la skill `publicar-vasylpavlyuchok` para eso.
+nuevas — usa la skill `publicar-en-vasylpavlyuchok-com` para eso.
 
 ## 6. Instalación local del usuario
 
