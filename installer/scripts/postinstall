@@ -61,7 +61,7 @@ as_user launchctl load "$PLIST" 2>/dev/null || true
 
 # ── 4. Instrucciones de Accesibilidad ────────────────────────────────────────
 dialog_ok \
-"✅ Whisper Dictation VP 3.1.2 instalada correctamente.
+"✅ Whisper Dictation VP 3.1.3 instalada correctamente.
 
 ÚLTIMO PASO — al abrirse la app, macOS pedirá el permiso de Accesibilidad:
 

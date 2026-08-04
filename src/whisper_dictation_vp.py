@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.1.2
+Diseñado por Vasyl Pavlyuchok & Claude — v3.1.3
 """
 
-APP_VERSION = "3.1.2"
+APP_VERSION = "3.1.3"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -70,6 +70,14 @@ HOTKEY_NAMES = {
 }
 # Opciones mostradas en el selector (sin duplicados físicos)
 HOTKEY_CHOICES = ["alt_r", "alt", "cmd", "cmd_r", "ctrl", "ctrl_r"]
+
+# Máscaras de NSEvent.modifierFlags por keycode (Command/Option/Control)
+NSEVENT_FLAG_MASKS = {
+    55: 1 << 20, 54: 1 << 20,   # Command
+    58: 1 << 19, 61: 1 << 19,   # Option
+    59: 1 << 18, 62: 1 << 18,   # Control
+}
+NSEVENT_MASK_FLAGS_CHANGED = 1 << 12  # NSEventTypeFlagsChanged
 
 LOG_FILE = os.path.expanduser("~/Library/Logs/WhisperDictationVP.log")
 
@@ -554,6 +562,32 @@ class WhisperDictationApp(rumps.App):
             on_press=self._on_press, on_release=self._on_release)
         self._listener.daemon = True
         self._listener.start()
+
+        # Segundo canal de escucha: NSEvent global monitor (API nativa de
+        # macOS, solo requiere Accesibilidad). El event tap de pynput puede
+        # crearse "muerto" en apps empaquetadas aunque el permiso esté
+        # concedido; con dos canales y dedupe, si uno falla el otro funciona.
+        self._ns_monitor = None
+        try:
+            from AppKit import NSEvent
+
+            def _monitor_handler(event):
+                try:
+                    vk = int(event.keyCode())
+                    flags = int(event.modifierFlags())
+                    mask = NSEVENT_FLAG_MASKS.get(vk, 0)
+                    self._handle_key_event(vk, bool(flags & mask), False,
+                                           source="nsevent")
+                except Exception as e:
+                    dbg(f"monitor nsevent error: {e}")
+
+            self._ns_monitor = NSEvent.\
+                addGlobalMonitorForEventsMatchingMask_handler_(
+                    NSEVENT_MASK_FLAGS_CHANGED, _monitor_handler)
+            dbg(f"monitor NSEvent: {'activo' if self._ns_monitor else 'FALLÓ'}")
+        except Exception as e:
+            dbg(f"monitor NSEvent no disponible: {e}")
+
         dbg(f"app v{APP_VERSION} iniciada — hotkey={self.config.get('hotkey')} "
             f"(vk={self._current_hotkey_vk()}) proveedor={self.provider}")
 
@@ -569,6 +603,10 @@ class WhisperDictationApp(rumps.App):
         except OSError:
             pass
         time.sleep(4)
+        # Los eventos del self-test no deben disparar grabaciones reales:
+        # el canal NSEvent no distingue eventos sintéticos, así que abrimos
+        # la ventana de supresión (se loguean igualmente, que es lo que importa)
+        self._suppress_until = time.time() + 6
         try:
             import Quartz
             vk = self._current_hotkey_vk()
@@ -969,18 +1007,19 @@ class WhisperDictationApp(rumps.App):
     # dos toques seguidos la inician.
 
     def _on_press(self, key, injected=False):
-        self._handle_key_event(key, True, injected)
+        vk = getattr(getattr(key, "value", key), "vk", None)
+        self._handle_key_event(vk, True, injected, source="pynput")
 
     def _on_release(self, key, injected=False):
-        self._handle_key_event(key, False, injected)
-
-    def _handle_key_event(self, key, reported_press, injected):
         vk = getattr(getattr(key, "value", key), "vk", None)
+        self._handle_key_event(vk, False, injected, source="pynput")
+
+    def _handle_key_event(self, vk, reported_press, injected, source="?"):
         if vk is None or vk != self._current_hotkey_vk():
             return
 
         down = key_physically_down(vk)
-        dbg(f"hotkey ev: key={key} reported_press={reported_press} "
+        dbg(f"hotkey ev[{source}]: vk={vk} reported_press={reported_press} "
             f"injected={injected} phys_down={down}")
 
         # Ignorar eventos sintéticos (p. ej. nuestro propio Cmd+V al pegar)
@@ -1101,6 +1140,12 @@ class WhisperDictationApp(rumps.App):
         self._ui_timer.stop()
         try:
             self._listener.stop()
+        except Exception:
+            pass
+        try:
+            if self._ns_monitor is not None:
+                from AppKit import NSEvent
+                NSEvent.removeMonitor_(self._ns_monitor)
         except Exception:
             pass
         self.stream.stop()
