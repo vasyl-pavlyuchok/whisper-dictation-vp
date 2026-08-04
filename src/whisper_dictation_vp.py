@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.1.3
+Diseñado por Vasyl Pavlyuchok & Claude — v3.2.0
 """
 
-APP_VERSION = "3.1.3"
+APP_VERSION = "3.2.0"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -90,6 +90,25 @@ def dbg(msg):
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
     except Exception:
         pass
+
+UPDATE_URL     = ("https://api.github.com/repos/vasyl-pavlyuchok/"
+                  "whisper-dictation-vp/releases/latest")
+DOWNLOAD_PAGE  = ("https://github.com/vasyl-pavlyuchok/"
+                  "whisper-dictation-vp/releases/latest")
+
+def version_tuple(v):
+    try:
+        return tuple(int(x) for x in v.strip().lstrip("v").split("."))
+    except Exception:
+        return (0,)
+
+def fetch_latest_version():
+    """Devuelve la última versión publicada en GitHub (o None si no hay red)."""
+    import urllib.request
+    req = urllib.request.Request(UPDATE_URL,
+                                 headers={"User-Agent": "WhisperDictationVP"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.load(r).get("tag_name", "").lstrip("v") or None
 
 def key_physically_down(vk):
     """Estado físico real de la tecla vía Quartz. None si no se puede saber."""
@@ -281,6 +300,7 @@ def load_config():
     config.setdefault("history", [])
     config.setdefault("ai_format", False)
     config.setdefault("dictionary", [])
+    config.setdefault("check_updates", True)
     if not config["providers"] and os.environ.get("GROQ_API_KEY"):
         config["providers"]["groq"] = os.environ.get("GROQ_API_KEY")
     if not config["providers"] and os.environ.get("WHISPER_API_KEY"):
@@ -594,6 +614,42 @@ class WhisperDictationApp(rumps.App):
         if os.path.exists(os.path.expanduser("~/.wdvp_selftest")):
             threading.Thread(target=self._selftest, daemon=True).start()
 
+        self._update_available = None
+        threading.Thread(target=self._update_check_loop, daemon=True).start()
+
+    # ── Actualizaciones ───────────────────────────────────────────────────────
+
+    def _update_check_loop(self):
+        """Comprueba GitHub al arrancar y luego una vez al día. Si hay versión
+        nueva: notificación de macOS + entrada en el menú para descargarla."""
+        time.sleep(15)  # no competir con el arranque
+        while True:
+            if not self.config.get("check_updates", True):
+                time.sleep(86400)
+                continue
+            try:
+                latest = fetch_latest_version()
+                if latest and version_tuple(latest) > version_tuple(APP_VERSION):
+                    if self._update_available != latest:
+                        self._update_available = latest
+                        dbg(f"actualización disponible: v{latest}")
+                        self._dispatch(self._build_menu)
+                        try:
+                            rumps.notification(
+                                "Whisper Dictation VP",
+                                f"Nueva versión v{latest} disponible",
+                                "Descárgala desde el menú 🎙 de la barra.")
+                        except Exception as e:
+                            dbg(f"notificación falló: {e}")
+                else:
+                    dbg(f"sin actualizaciones (última: v{latest})")
+            except Exception as e:
+                dbg(f"comprobación de updates falló: {e}")
+            time.sleep(86400)
+
+    def _open_download_page(self, _):
+        subprocess.Popen(["open", DOWNLOAD_PAGE])
+
     def _selftest(self):
         """Diagnóstico: postea toques sintéticos del hotkey y deja en el log
         si el listener los recibe (llegan con injected=True y no disparan
@@ -752,10 +808,23 @@ class WhisperDictationApp(rumps.App):
             callback=self._toggle_ai_format if ai_available else None,
         )
 
+        updates_on = self.config.get("check_updates", True)
+        updates_item = rumps.MenuItem(
+            f"🔔 Avisar de actualizaciones: {'Sí' if updates_on else 'No'}",
+            callback=self._toggle_check_updates,
+        )
+
         # ── Menú principal ────────────────────────────────────────────────────
+        update_items = []
+        if getattr(self, "_update_available", None):
+            update_items = [rumps.MenuItem(
+                f"⬆️ Nueva versión v{self._update_available} — descargar",
+                callback=self._open_download_page)]
+
         self.menu.clear()
         self.menu = [
             rumps.MenuItem(f"Whisper Dictation VP v{APP_VERSION}"),
+            *update_items,
             None,
             provider_menu,
             lang_menu,
@@ -763,6 +832,7 @@ class WhisperDictationApp(rumps.App):
             None,
             ai_item,
             dict_menu,
+            updates_item,
             None,
             history_menu,
             None,
@@ -776,6 +846,12 @@ class WhisperDictationApp(rumps.App):
     def _toggle_ai_format(self, _):
         with self.config_lock:
             self.config["ai_format"] = not self.config.get("ai_format", False)
+            save_config(self.config)
+        self._build_menu()
+
+    def _toggle_check_updates(self, _):
+        with self.config_lock:
+            self.config["check_updates"] = not self.config.get("check_updates", True)
             save_config(self.config)
         self._build_menu()
 

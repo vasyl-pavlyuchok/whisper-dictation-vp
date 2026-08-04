@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.1.2
+Diseñado por Vasyl Pavlyuchok & Claude — v3.2.0
 """
 
-APP_VERSION = "3.1.2"
+APP_VERSION = "3.2.0"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -80,6 +80,7 @@ def load_config():
     config.setdefault("history", [])
     config.setdefault("ai_format", False)
     config.setdefault("dictionary", [])
+    config.setdefault("check_updates", True)
     if not config["providers"] and os.environ.get("GROQ_API_KEY"):
         config["providers"]["groq"] = os.environ.get("GROQ_API_KEY")
     return config
@@ -87,6 +88,26 @@ def load_config():
 def save_config(config):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
+
+# ── Actualizaciones ───────────────────────────────────────────────────────────
+
+UPDATE_URL    = ("https://api.github.com/repos/vasyl-pavlyuchok/"
+                 "whisper-dictation-vp/releases/latest")
+DOWNLOAD_PAGE = ("https://github.com/vasyl-pavlyuchok/"
+                 "whisper-dictation-vp/releases/latest")
+
+def version_tuple(v):
+    try:
+        return tuple(int(x) for x in v.strip().lstrip("v").split("."))
+    except Exception:
+        return (0,)
+
+def fetch_latest_version():
+    import urllib.request
+    req = urllib.request.Request(UPDATE_URL,
+                                 headers={"User-Agent": "WhisperDictationVP"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.load(r).get("tag_name", "").lstrip("v") or None
 
 # ── Sonidos ───────────────────────────────────────────────────────────────────
 
@@ -333,6 +354,35 @@ class WhisperDictationWin:
             menu=pystray.Menu(lambda: self._menu_items()),
         )
 
+        self._update_available = None
+        threading.Thread(target=self._update_check_loop, daemon=True).start()
+
+    def _update_check_loop(self):
+        time.sleep(15)
+        while True:
+            if not self.config.get("check_updates", True):
+                time.sleep(86400)
+                continue
+            try:
+                latest = fetch_latest_version()
+                if latest and version_tuple(latest) > version_tuple(APP_VERSION):
+                    if self._update_available != latest:
+                        self._update_available = latest
+                        try:
+                            self.icon.notify(
+                                f"Nueva versión v{latest} disponible — "
+                                "descárgala desde el menú del icono.",
+                                "Whisper Dictation VP")
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            time.sleep(86400)
+
+    def _open_download_page(self, icon, item):
+        import webbrowser
+        webbrowser.open(DOWNLOAD_PAGE)
+
     # ── Primer arranque ───────────────────────────────────────────────────────
 
     def _first_run_setup(self):
@@ -422,8 +472,15 @@ class WhisperDictationWin:
             dict_items.append(pystray.Menu.SEPARATOR)
         dict_items.append(pystray.MenuItem("Añadir palabra…", self._add_word))
 
+        update_items = []
+        if getattr(self, "_update_available", None):
+            update_items = [pystray.MenuItem(
+                f"⬆️ Nueva versión v{self._update_available} — descargar",
+                self._open_download_page)]
+
         return [
             pystray.MenuItem(f"Whisper Dictation VP v{APP_VERSION}", None, enabled=False),
+            *update_items,
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Proveedor", pystray.Menu(*provider_items)),
             pystray.MenuItem("Idioma", pystray.Menu(*lang_items)),
@@ -433,6 +490,9 @@ class WhisperDictationWin:
             pystray.MenuItem("Formato IA (limpia muletillas)",
                              self._toggle_ai_format,
                              checked=lambda item: self.config.get("ai_format", False)),
+            pystray.MenuItem("Avisar de actualizaciones",
+                             self._toggle_check_updates,
+                             checked=lambda item: self.config.get("check_updates", True)),
             pystray.MenuItem(f"Diccionario ({len(dictionary)})",
                              pystray.Menu(*dict_items)),
             pystray.Menu.SEPARATOR,
@@ -447,6 +507,11 @@ class WhisperDictationWin:
     def _toggle_ai_format(self, icon, item):
         with self.config_lock:
             self.config["ai_format"] = not self.config.get("ai_format", False)
+            save_config(self.config)
+
+    def _toggle_check_updates(self, icon, item):
+        with self.config_lock:
+            self.config["check_updates"] = not self.config.get("check_updates", True)
             save_config(self.config)
 
     def _add_word(self, icon, item):

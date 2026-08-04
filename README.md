@@ -156,6 +156,10 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.2.0
+- **🔔 Notificaciones de actualización** — la app comprueba GitHub al arrancar (y cada 24 h); si hay versión nueva muestra una notificación y una entrada «⬆️ Nueva versión — descargar» en el menú (macOS y Windows). Desactivable con un clic desde el menú («🔔 Avisar de actualizaciones»)
+- **Doble canal de escucha del hotkey** — NSEvent global monitor (API nativa de macOS) + pynput con dedupe: si un canal falla, el otro sigue funcionando (arregla el caso «permiso concedido pero la tecla no responde»)
+
 ### v3.1.2
 - **Idioma automático por defecto** — Whisper detecta el idioma de cada dictado (español, inglés, ucraniano, italiano…); ya no hay que cambiarlo a mano
 - **17 idiomas en el menú** — añadidos ucraniano, chino, ruso, árabe, hindi, japonés, coreano, turco, polaco y neerlandés
