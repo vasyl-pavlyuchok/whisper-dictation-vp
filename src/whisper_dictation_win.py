@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.5.1
+Diseñado por Vasyl Pavlyuchok & Claude — v3.5.2
 """
 
-APP_VERSION = "3.5.1"
+APP_VERSION = "3.5.2"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -181,25 +181,62 @@ def dialog_choice_list(prompt, options):
 # ── Portapapeles y pegado ─────────────────────────────────────────────────────
 
 def set_clipboard(text):
+    """Copia UTF-16 al portapapeles vía Win32. En 64 bits es OBLIGATORIO
+    declarar argtypes/restype: sin ellos ctypes trunca los handles a 32 bits
+    → GlobalLock devuelve NULL → access violation (bug real del beta test)."""
     import ctypes
+    from ctypes import wintypes
     CF_UNICODETEXT = 13
     GMEM_MOVEABLE = 0x0002
     user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.OpenClipboard.restype = wintypes.BOOL
+    user32.EmptyClipboard.restype = wintypes.BOOL
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    user32.SetClipboardData.restype = wintypes.HANDLE
+    user32.CloseClipboard.restype = wintypes.BOOL
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = wintypes.LPVOID
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
+    kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+
     data = text.encode("utf-16-le") + b"\x00\x00"
     if not user32.OpenClipboard(None):
         raise RuntimeError("No se pudo abrir el portapapeles")
     try:
         user32.EmptyClipboard()
         handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+        if not handle:
+            raise RuntimeError("GlobalAlloc falló")
         ptr = kernel32.GlobalLock(handle)
+        if not ptr:
+            kernel32.GlobalFree(handle)
+            raise RuntimeError("GlobalLock falló")
         ctypes.memmove(ptr, data, len(data))
         kernel32.GlobalUnlock(handle)
-        user32.SetClipboardData(CF_UNICODETEXT, handle)
+        if not user32.SetClipboardData(CF_UNICODETEXT, handle):
+            kernel32.GlobalFree(handle)
+            raise RuntimeError("SetClipboardData falló")
     finally:
         user32.CloseClipboard()
 
+
+def set_clipboard_safe(text):
+    """set_clipboard con plan B: clip.exe con BOM UTF-16 (maneja Unicode)."""
+    try:
+        set_clipboard(text)
+    except Exception as e:
+        dbg(f"portapapeles Win32 falló ({e}) — fallback clip.exe")
+        import subprocess
+        subprocess.run(["clip"], input=b"\xff\xfe" + text.encode("utf-16-le"),
+                       check=True)
+
 def paste_text(text):
-    set_clipboard(text)
+    set_clipboard_safe(text)
     time.sleep(0.15)
     kb = KeyboardController()
     with kb.pressed(Key.ctrl):
@@ -744,7 +781,7 @@ class WhisperDictationWin:
     def _make_copy_action(self, text):
         def action(icon, item):
             try:
-                set_clipboard(text)
+                set_clipboard_safe(text)
                 play_sound("ok")
             except Exception:
                 pass

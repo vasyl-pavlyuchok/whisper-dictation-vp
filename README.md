@@ -161,6 +161,10 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.5.2 (solo Windows)
+- **Fix del portapapeles en Windows de 64 bits** — la transcripción llegaba correctamente de Groq pero la app se estrellaba al copiar el texto (`access violation`): faltaba declarar los tipos de las llamadas Win32, así que ctypes truncaba el handle de memoria a 32 bits. Ahora con tipos correctos, comprobación de cada paso y fallback a `clip.exe`
+- Diagnosticado por SSH sobre Tailscale directamente en el equipo del beta test
+
 ### v3.5.1 (solo Windows — en Mac puedes ignorar esta actualización)
 - **Selector de micrófono en el menú** — caso real diagnosticado: Windows daba como entrada predeterminada el micrófono de una webcam que no captaba nada (RMS plano) y la app "no transcribía"; ahora eliges el micrófono correcto desde el menú de la bandeja y queda guardado
 - El log registra el micrófono activo y cada cambio de dispositivo
