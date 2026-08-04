@@ -1,8 +1,23 @@
-# Whisper Dictation VP
+# 🎙 Whisper Dictation VP
 
-Dictado por voz para macOS y Windows usando inteligencia artificial. Doble-toque **Option derecho** para iniciar la grabación, toque simple para detener — el texto aparece pegado automáticamente en cualquier app.
+[![Release](https://img.shields.io/github/v/release/vasyl-pavlyuchok/whisper-dictation-vp?label=versi%C3%B3n&color=84cc16)](../../releases/latest)
+[![Licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE)
+[![macOS](https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-black?logo=apple)](../../releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20(beta)-0078d4?logo=windows)](../../releases/latest)
 
-Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.1.1
+**Dicta en vez de escribir, en cualquier app.** Doble-toque una tecla, habla, toque simple — y el texto aparece donde estabas escribiendo. Gratis, de código abierto y con tu propia API key: sin suscripciones ni límites.
+
+🌐 **Detección automática de idioma** — habla y Whisper reconoce el idioma solo:
+
+🇪🇸 🇬🇧 🇺🇦 🇫🇷 🇩🇪 🇮🇹 🇵🇹 🇨🇳 🇷🇺 🇸🇦 🇮🇳 🇯🇵 🇰🇷 🇹🇷 🇵🇱 🇳🇱
+
+Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.1.2
+
+---
+
+## ¿Por qué existe?
+
+Dictar en vez de escribir cambia por completo la velocidad a la que trabajas. Apps como Wispr Flow demostraron lo potente que es esta forma de interactuar; esta app nace de esa idea, pero **libre y bajo tu control**: tu API key, sin cuota mensual. Detecta el idioma automáticamente, tiene un **diccionario personal** para tu vocabulario (los nombres y términos que por pronunciación siempre salen mal) y un **Formato IA** que limpia muletillas y puntuación mientras hablas. La primera versión se construyó con Claude en una tarde; hoy es una app 100% nativa para macOS y Windows, validada con uso diario, y se comparte para que más personas tengan acceso a herramientas así sin pagar una suscripción.
 
 ---
 
