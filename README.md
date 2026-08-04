@@ -5,7 +5,7 @@
 [![macOS](https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-black?logo=apple)](../../releases/latest)
 [![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20(beta)-0078d4?logo=windows)](../../releases/latest)
 
-**Dicta en vez de escribir, en cualquier app.** Doble-toque una tecla, habla, toque simple — y el texto aparece donde estabas escribiendo. Gratis, de código abierto y con tu propia API key: sin suscripciones ni límites.
+**Dicta en vez de escribir, en cualquier app.** Doble-toque una tecla, habla, toque simple — y el texto aparece donde estabas escribiendo. Gratis y de código abierto: funciona con la **API gratuita de Groq** (whisper-large-v3) — meses de uso diario sin tocar un solo límite. Sin suscripción: lo que cuesta un Wispr Flow, te lo ahorras cada mes.
 
 🌐 **Detección automática de idioma** — habla y Whisper reconoce el idioma solo:
 
