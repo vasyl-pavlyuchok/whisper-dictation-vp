@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.0.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.1.0
 """
 
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.1.0"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -68,6 +68,8 @@ def load_config():
     config.setdefault("language", "es")
     config.setdefault("hotkey", "alt_r")
     config.setdefault("history", [])
+    config.setdefault("ai_format", False)
+    config.setdefault("dictionary", [])
     if not config["providers"] and os.environ.get("GROQ_API_KEY"):
         config["providers"]["groq"] = os.environ.get("GROQ_API_KEY")
     return config
@@ -178,21 +180,25 @@ def build_client(provider, api_key):
         return aai
     return None
 
-def transcribe(provider, client, path, language):
+def transcribe(provider, client, path, language, dictionary=None):
     lang = None if language == "auto" else language
+    vocab_hint = ", ".join(dictionary) if dictionary else None
     if provider == "groq":
         with open(path, "rb") as f:
+            kwargs = {"prompt": vocab_hint} if vocab_hint else {}
             r = client.audio.transcriptions.create(
                 file=(os.path.basename(path), f, "audio/wav"),
                 model="whisper-large-v3",
                 language=lang,
                 response_format="text",
+                **kwargs,
             )
         return r.strip() if isinstance(r, str) else r.text.strip()
     elif provider == "openai":
         with open(path, "rb") as f:
+            kwargs = {"prompt": vocab_hint} if vocab_hint else {}
             r = client.audio.transcriptions.create(
-                model="whisper-1", file=f, language=lang)
+                model="whisper-1", file=f, language=lang, **kwargs)
         return r.text.strip()
     elif provider == "deepgram":
         with open(path, "rb") as f:
@@ -215,6 +221,42 @@ def transcribe(provider, client, path, language):
             raise RuntimeError(f"AssemblyAI error: {result.error}")
         return (result.text or "").strip()
     return ""
+
+
+def ai_cleanup(provider, client, text, dictionary=None):
+    """Post-procesa la transcripción con un LLM (solo Groq/OpenAI)."""
+    dict_hint = ""
+    if dictionary:
+        dict_hint = (" Si aparecen palabras que suenan parecido a estas, "
+                     f"usa la grafía exacta: {', '.join(dictionary)}.")
+    system = (
+        "Eres un corrector de dictado por voz. Recibes una transcripción en "
+        "bruto y devuelves EXACTAMENTE el mismo contenido, limpio: elimina "
+        "muletillas y repeticiones accidentales (eh, em, mmm, «o sea» "
+        "duplicados), corrige puntuación, tildes y mayúsculas, y mantén el "
+        "idioma original. NO resumas, NO añadas nada, NO cambies el "
+        "significado, NO respondas al contenido." + dict_hint +
+        " Devuelve solo el texto corregido, sin comillas ni explicaciones."
+    )
+    if provider == "groq":
+        r = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": text}],
+            temperature=0.2,
+        )
+        cleaned = (r.choices[0].message.content or "").strip()
+    elif provider == "openai":
+        r = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": text}],
+            temperature=0.2,
+        )
+        cleaned = (r.choices[0].message.content or "").strip()
+    else:
+        return text
+    return cleaned if cleaned else text
 
 # ── Iconos de bandeja (generados con PIL) ─────────────────────────────────────
 
@@ -361,6 +403,15 @@ class WhisperDictationWin:
         else:
             history_items = [pystray.MenuItem("(vacío)", None, enabled=False)]
 
+        dictionary = cfg.get("dictionary", [])
+        dict_items = [
+            pystray.MenuItem(f"Eliminar: {w}", self._make_remove_word_action(w))
+            for w in dictionary
+        ]
+        if dict_items:
+            dict_items.append(pystray.Menu.SEPARATOR)
+        dict_items.append(pystray.MenuItem("Añadir palabra…", self._add_word))
+
         return [
             pystray.MenuItem(f"Whisper Dictation VP v{APP_VERSION}", None, enabled=False),
             pystray.Menu.SEPARATOR,
@@ -369,6 +420,12 @@ class WhisperDictationWin:
             pystray.MenuItem(f"Tecla: {hotkey_name} (doble-toque)",
                              pystray.Menu(*hotkey_items)),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Formato IA (limpia muletillas)",
+                             self._toggle_ai_format,
+                             checked=lambda item: self.config.get("ai_format", False)),
+            pystray.MenuItem(f"Diccionario ({len(dictionary)})",
+                             pystray.Menu(*dict_items)),
+            pystray.Menu.SEPARATOR,
             pystray.MenuItem("Historial (clic para copiar)",
                              pystray.Menu(*history_items)),
             pystray.Menu.SEPARATOR,
@@ -376,6 +433,36 @@ class WhisperDictationWin:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Salir", self._quit),
         ]
+
+    def _toggle_ai_format(self, icon, item):
+        with self.config_lock:
+            self.config["ai_format"] = not self.config.get("ai_format", False)
+            save_config(self.config)
+
+    def _add_word(self, icon, item):
+        def worker():
+            word = dialog_input(
+                "Añade una palabra o nombre propio que Whisper\n"
+                "suela transcribir mal:").strip()
+            if not word:
+                return
+            with self.config_lock:
+                dictionary = self.config.get("dictionary", [])
+                if word not in dictionary:
+                    dictionary.append(word)
+                    self.config["dictionary"] = dictionary
+                    save_config(self.config)
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _make_remove_word_action(self, word):
+        def action(icon, item):
+            with self.config_lock:
+                dictionary = self.config.get("dictionary", [])
+                if word in dictionary:
+                    dictionary.remove(word)
+                    self.config["dictionary"] = dictionary
+                    save_config(self.config)
+        return action
 
     def _make_provider_action(self, provider):
         def action(icon, item):
@@ -445,7 +532,9 @@ class WhisperDictationWin:
 
     # ── Teclado ───────────────────────────────────────────────────────────────
 
-    def _on_press(self, key):
+    def _on_press(self, key, injected=False):
+        if injected:
+            return  # eventos sintéticos (nuestro propio Ctrl+V al pegar)
         if key != self._current_hotkey():
             return
         if self._key_down:
@@ -461,7 +550,9 @@ class WhisperDictationWin:
                 self._set_state("processing")
                 threading.Thread(target=self._process, args=(frames,), daemon=True).start()
 
-    def _on_release(self, key):
+    def _on_release(self, key, injected=False):
+        if injected:
+            return
         if key != self._current_hotkey():
             return
         self._key_down = False
@@ -514,8 +605,15 @@ class WhisperDictationWin:
                 wf.setframerate(SAMPLE_RATE)
                 wf.writeframes(audio.tobytes())
 
+            dictionary = self.config.get("dictionary", [])
             text = transcribe(self.provider, self.client, path,
-                              self.config.get("language", "es"))
+                              self.config.get("language", "es"), dictionary)
+
+            if text and self.config.get("ai_format"):
+                try:
+                    text = ai_cleanup(self.provider, self.client, text, dictionary)
+                except Exception:
+                    pass
 
             if text:
                 with self.config_lock:

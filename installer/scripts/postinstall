@@ -49,7 +49,7 @@ as_user launchctl load "$PLIST" 2>/dev/null || true
 
 # ── 4. Instrucciones de Accesibilidad ────────────────────────────────────────
 dialog_ok \
-"✅ Whisper Dictation VP 3.0.0 instalado correctamente.
+"✅ Whisper Dictation VP 3.1.0 instalado correctamente.
 
 Ahora es una app 100% nativa: ya no necesita Python ni ninguna ventana de Terminal.
 

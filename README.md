@@ -2,7 +2,7 @@
 
 Dictado por voz para macOS y Windows usando inteligencia artificial. Doble-toque **Option derecho** para iniciar la grabación, toque simple para detener — el texto aparece pegado automáticamente en cualquier app.
 
-Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.0.0
+Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.1.0
 
 ---
 
@@ -88,6 +88,8 @@ Solo necesitas **una** API key para empezar. **Recomendado: Groq** — es gratui
 
 - **Doble-toque para grabar** — inicia la grabación sin mantener la tecla pulsada; toque simple para detener
 - **App nativa** — Python embebido, sin dependencias externas ni ventanas de Terminal
+- **✨ Formato IA** — un LLM (gratuito con Groq) elimina muletillas («eh», «em», repeticiones) y corrige puntuación y mayúsculas antes de pegar
+- **📖 Diccionario personal** — añade nombres propios y tecnicismos que Whisper suele transcribir mal; se aplican tanto en la transcripción como en el formato IA
 - **Historial interactivo** — haz clic en cualquier transcripción para verla completa, copiarla o editarla
 - **4 proveedores de IA** — añade, cambia o elimina APIs desde el menú
 - **Últimas 10 transcripciones** guardadas en el historial
@@ -138,6 +140,14 @@ rm -f ~/.whisper_dictation_vp.json
 ---
 
 ## Changelog
+
+### v3.1.0
+- **✨ Formato IA** — post-procesado opcional con LLM (Groq llama-3.3 gratuito u OpenAI): elimina muletillas y corrige puntuación sin cambiar el significado
+- **📖 Diccionario personal** — palabras que Whisper transcribe mal (nombres, marcas, tecnicismos) se corrigen automáticamente
+- **Fix crítico del hotkey** — en la app empaquetada los modificadores (Cmd, Ctrl) podían llegar como «release» sin «press» y la grabación no se podía detener; el nuevo motor consulta el estado físico real de la tecla vía Quartz y es inmune a este fallo
+- **Anti-eco del pegado** — el Cmd+V sintético de la propia app ya no puede registrarse como toque del hotkey
+- **Selector de tecla saneado** — sin opciones duplicadas, y con Command/Control derechos disponibles
+- **Log de diagnóstico** — `~/Library/Logs/WhisperDictationVP.log` (rotativo, sin contenido de transcripciones)
 
 ### v3.0.0
 - **App 100% nativa en macOS** — PyInstaller con Python embebido: ya no hace falta tener Python instalado ni queda ninguna ventana de Terminal abierta

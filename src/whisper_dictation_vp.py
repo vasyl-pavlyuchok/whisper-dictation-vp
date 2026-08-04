@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.0.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.1.0
 """
 
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.1.0"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -40,22 +40,47 @@ LANGUAGES = {
     "pt":    "Portugués",
 }
 
-HOTKEYS = {
-    "alt_r":   keyboard.Key.alt_r,
-    "alt":     keyboard.Key.alt,
-    "ctrl":    keyboard.Key.ctrl,
-    "ctrl_l":  keyboard.Key.ctrl_l,
-    "cmd":     keyboard.Key.cmd,
-    "cmd_l":   keyboard.Key.cmd_l,
+# Keycodes físicos de macOS por hotkey. Las claves legacy (cmd_l, ctrl_l,
+# alt_l) se aceptan en configs antiguas y equivalen a la tecla izquierda.
+HOTKEY_VKS = {
+    "alt_r":  61, "alt":  58, "alt_l":  58,
+    "cmd":    55, "cmd_l": 55, "cmd_r":  54,
+    "ctrl":   59, "ctrl_l": 59, "ctrl_r": 62,
 }
 HOTKEY_NAMES = {
-    "alt_r":   "Option derecho",
-    "alt":     "Option izquierdo",
-    "ctrl":    "Control",
-    "ctrl_l":  "Control izquierdo",
-    "cmd":     "Command",
-    "cmd_l":   "Command izquierdo",
+    "alt_r":  "Option derecho",
+    "alt":    "Option izquierdo",
+    "alt_l":  "Option izquierdo",
+    "cmd":    "Command izquierdo",
+    "cmd_l":  "Command izquierdo",
+    "cmd_r":  "Command derecho",
+    "ctrl":   "Control izquierdo",
+    "ctrl_l": "Control izquierdo",
+    "ctrl_r": "Control derecho",
 }
+# Opciones mostradas en el selector (sin duplicados físicos)
+HOTKEY_CHOICES = ["alt_r", "alt", "cmd", "cmd_r", "ctrl", "ctrl_r"]
+
+LOG_FILE = os.path.expanduser("~/Library/Logs/WhisperDictationVP.log")
+
+def dbg(msg):
+    """Log ligero de diagnóstico con rotación (~256 KB)."""
+    try:
+        if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > 262144:
+            os.replace(LOG_FILE, LOG_FILE + ".old")
+        with open(LOG_FILE, "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+    except Exception:
+        pass
+
+def key_physically_down(vk):
+    """Estado físico real de la tecla vía Quartz. None si no se puede saber."""
+    try:
+        import Quartz
+        return bool(Quartz.CGEventSourceKeyState(
+            Quartz.kCGEventSourceStateHIDSystemState, vk))
+    except Exception:
+        return None
 
 # ── Diálogo translúcido con NSVisualEffectView (vibrancy) ─────────────────────
 
@@ -223,6 +248,8 @@ def load_config():
     config.setdefault("language", "es")
     config.setdefault("hotkey", "alt_r")
     config.setdefault("history", [])
+    config.setdefault("ai_format", False)
+    config.setdefault("dictionary", [])
     if not config["providers"] and os.environ.get("GROQ_API_KEY"):
         config["providers"]["groq"] = os.environ.get("GROQ_API_KEY")
     if not config["providers"] and os.environ.get("WHISPER_API_KEY"):
@@ -351,21 +378,27 @@ def build_client(provider, api_key):
         return aai
     return None
 
-def transcribe(provider, client, path, language):
+def transcribe(provider, client, path, language, dictionary=None):
     lang = None if language == "auto" else language
+    # Whisper acepta un "prompt" que sesga la transcripción hacia vocabulario
+    # conocido — lo usamos para el diccionario personal (nombres, tecnicismos)
+    vocab_hint = ", ".join(dictionary) if dictionary else None
     if provider == "groq":
         with open(path, "rb") as f:
+            kwargs = {"prompt": vocab_hint} if vocab_hint else {}
             r = client.audio.transcriptions.create(
                 file=(os.path.basename(path), f, "audio/wav"),
                 model="whisper-large-v3",
                 language=lang,
                 response_format="text",
+                **kwargs,
             )
         return r.strip() if isinstance(r, str) else r.text.strip()
     elif provider == "openai":
         with open(path, "rb") as f:
+            kwargs = {"prompt": vocab_hint} if vocab_hint else {}
             r = client.audio.transcriptions.create(
-                model="whisper-1", file=f, language=lang)
+                model="whisper-1", file=f, language=lang, **kwargs)
         return r.text.strip()
     elif provider == "deepgram":
         with open(path, "rb") as f:
@@ -389,6 +422,44 @@ def transcribe(provider, client, path, language):
         return (result.text or "").strip()
     return ""
 
+
+def ai_cleanup(provider, client, text, dictionary=None):
+    """Post-procesa la transcripción con un LLM: quita muletillas, corrige
+    puntuación y aplica el diccionario personal. Solo Groq y OpenAI (los dos
+    tienen modelos de chat). Si algo falla, se devuelve el texto original."""
+    dict_hint = ""
+    if dictionary:
+        dict_hint = (" Si aparecen palabras que suenan parecido a estas, "
+                     f"usa la grafía exacta: {', '.join(dictionary)}.")
+    system = (
+        "Eres un corrector de dictado por voz. Recibes una transcripción en "
+        "bruto y devuelves EXACTAMENTE el mismo contenido, limpio: elimina "
+        "muletillas y repeticiones accidentales (eh, em, mmm, «o sea» "
+        "duplicados), corrige puntuación, tildes y mayúsculas, y mantén el "
+        "idioma original. NO resumas, NO añadas nada, NO cambies el "
+        "significado, NO respondas al contenido." + dict_hint +
+        " Devuelve solo el texto corregido, sin comillas ni explicaciones."
+    )
+    if provider == "groq":
+        r = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": text}],
+            temperature=0.2,
+        )
+        cleaned = (r.choices[0].message.content or "").strip()
+    elif provider == "openai":
+        r = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": text}],
+            temperature=0.2,
+        )
+        cleaned = (r.choices[0].message.content or "").strip()
+    else:
+        return text
+    return cleaned if cleaned else text
+
 # ── App ───────────────────────────────────────────────────────────────────────
 
 class WhisperDictationApp(rumps.App):
@@ -403,8 +474,8 @@ class WhisperDictationApp(rumps.App):
         self.audio_frames = []
 
         self._last_tap_time = 0.0
-        self._key_down      = False
-        self._stop_tap      = False
+        self._last_tap_end  = 0.0
+        self._suppress_until = 0.0
 
         self._ui_queue = queue.Queue()
         self._ui_timer = rumps.Timer(self._flush_ui_queue, 0.05)
@@ -442,6 +513,8 @@ class WhisperDictationApp(rumps.App):
             on_press=self._on_press, on_release=self._on_release)
         self._listener.daemon = True
         self._listener.start()
+        dbg(f"app v{APP_VERSION} iniciada — hotkey={self.config.get('hotkey')} "
+            f"(vk={self._current_hotkey_vk()}) proveedor={self.provider}")
 
     # ── UI dispatch ───────────────────────────────────────────────────────────
 
@@ -523,6 +596,35 @@ class WhisperDictationApp(rumps.App):
         else:
             history_menu.add(rumps.MenuItem("(vacío)"))
 
+        # ── Submenú Diccionario personal ──────────────────────────────────────
+        dictionary = self.config.get("dictionary", [])
+        dict_menu = rumps.MenuItem(f"📖 Diccionario ({len(dictionary)})")
+        for word in dictionary:
+            word_item = rumps.MenuItem(word)
+            word_item.add(rumps.MenuItem(
+                "Eliminar",
+                callback=lambda _, w=word: self._remove_dictionary_word(w)
+            ))
+            dict_menu.add(word_item)
+        if dictionary:
+            dict_menu.add(None)
+        dict_menu.add(rumps.MenuItem(
+            "Añadir palabra…",
+            callback=lambda _: threading.Thread(
+                target=self._add_dictionary_word, daemon=True).start()
+        ))
+
+        # ── Formato IA ────────────────────────────────────────────────────────
+        ai_on = self.config.get("ai_format", False)
+        ai_available = active_provider in ("groq", "openai")
+        ai_label = f"✨ Formato IA: {'Sí' if ai_on else 'No'}"
+        if not ai_available:
+            ai_label += " (requiere Groq/OpenAI)"
+        ai_item = rumps.MenuItem(
+            ai_label,
+            callback=self._toggle_ai_format if ai_available else None,
+        )
+
         # ── Menú principal ────────────────────────────────────────────────────
         self.menu.clear()
         self.menu = [
@@ -532,12 +634,46 @@ class WhisperDictationApp(rumps.App):
             lang_menu,
             rumps.MenuItem(f"Tecla: {hotkey_name} (doble-toque)"),
             None,
+            ai_item,
+            dict_menu,
+            None,
             history_menu,
             None,
             rumps.MenuItem("⚙️ Configuración", callback=self._open_settings),
             None,
             rumps.MenuItem("Salir", callback=self._quit),
         ]
+
+    # ── Formato IA y diccionario ──────────────────────────────────────────────
+
+    def _toggle_ai_format(self, _):
+        with self.config_lock:
+            self.config["ai_format"] = not self.config.get("ai_format", False)
+            save_config(self.config)
+        self._build_menu()
+
+    def _add_dictionary_word(self):
+        word = dialog_input(
+            "Añade una palabra o nombre propio que Whisper suela "
+            "transcribir mal (p. ej. «Techbooster», «Vasyl»):").strip()
+        if not word:
+            return
+        with self.config_lock:
+            dictionary = self.config.get("dictionary", [])
+            if word not in dictionary:
+                dictionary.append(word)
+                self.config["dictionary"] = dictionary
+                save_config(self.config)
+        self._dispatch(self._build_menu)
+
+    def _remove_dictionary_word(self, word):
+        with self.config_lock:
+            dictionary = self.config.get("dictionary", [])
+            if word in dictionary:
+                dictionary.remove(word)
+                self.config["dictionary"] = dictionary
+                save_config(self.config)
+        self._dispatch(self._build_menu)
 
     # ── Cambio rápido desde el menú ───────────────────────────────────────────
 
@@ -718,12 +854,11 @@ class WhisperDictationApp(rumps.App):
         self._dispatch(self._build_menu)
 
     def _settings_hotkey(self):
-        names  = list(HOTKEY_NAMES.values())
-        keys   = list(HOTKEY_NAMES.keys())
+        names  = [HOTKEY_NAMES[k] for k in HOTKEY_CHOICES]
         choice = dialog_choice("Selecciona la tecla de activación:", "Cancelar", *names)
         if not choice or choice == "Cancelar":
             return
-        self.config["hotkey"] = keys[names.index(choice)]
+        self.config["hotkey"] = HOTKEY_CHOICES[names.index(choice)]
         save_config(self.config)
         self._dispatch(self._build_menu)
 
@@ -734,42 +869,69 @@ class WhisperDictationApp(rumps.App):
             if self.recording:
                 self.audio_frames.append(indata.copy())
 
-    def _current_hotkey(self):
-        return HOTKEYS.get(self.config.get("hotkey", "alt_r"), keyboard.Key.alt_r)
+    def _current_hotkey_vk(self):
+        return HOTKEY_VKS.get(self.config.get("hotkey", "alt_r"), 61)
 
     # ── Teclado ───────────────────────────────────────────────────────────────
+    # Motor por toques: no confiamos en la dirección press/release que reporta
+    # pynput (en apps empaquetadas los modificadores pueden llegar como release
+    # sin press). En cada evento consultamos el estado FÍSICO real de la tecla
+    # (Quartz) y detectamos el fin de cada toque. Un toque para la grabación;
+    # dos toques seguidos la inician.
 
-    def _on_press(self, key):
-        if key != self._current_hotkey():
-            return
-        if self._key_down:
-            return
-        self._key_down = True
-        self._stop_tap = False
+    def _on_press(self, key, injected=False):
+        self._handle_key_event(key, True, injected)
 
-        with self.lock:
-            if self.recording:
-                self._stop_tap = True
-                self.recording = False
-                frames         = list(self.audio_frames)
-                self._dispatch(self._set_title, ICON_PROCESSING)
-                threading.Thread(target=self._process, args=(frames,), daemon=True).start()
+    def _on_release(self, key, injected=False):
+        self._handle_key_event(key, False, injected)
 
-    def _on_release(self, key):
-        if key != self._current_hotkey():
+    def _handle_key_event(self, key, reported_press, injected):
+        vk = getattr(getattr(key, "value", key), "vk", None)
+        if vk is None or vk != self._current_hotkey_vk():
             return
-        self._key_down = False
 
-        if self._stop_tap:
-            self._stop_tap = False
+        down = key_physically_down(vk)
+        dbg(f"hotkey ev: key={key} reported_press={reported_press} "
+            f"injected={injected} phys_down={down}")
+
+        # Ignorar eventos sintéticos (p. ej. nuestro propio Cmd+V al pegar)
+        if injected:
             return
+        # Ventana de gracia tras pegar, por si el evento no viene marcado
+        if time.time() < self._suppress_until:
+            return
+
+        # Dirección efectiva: estado físico real; si no disponible, lo reportado
+        is_down = down if down is not None else reported_press
+        if is_down:
+            return  # el toque aún no ha terminado
 
         now = time.time()
+        # Dedupe: si press+release llegan ya con la tecla soltada, ambos
+        # eventos se procesan con milisegundos de diferencia
+        if now - self._last_tap_end < 0.05:
+            return
+        self._last_tap_end = now
+        self._register_tap(now)
+
+    def _register_tap(self, now):
+        with self.lock:
+            if self.recording:
+                self.recording      = False
+                frames              = list(self.audio_frames)
+                self._last_tap_time = 0.0
+                dbg("tap: STOP grabación")
+                self._dispatch(self._set_title, ICON_PROCESSING)
+                threading.Thread(target=self._process, args=(frames,),
+                                 daemon=True).start()
+                return
+
         if now - self._last_tap_time <= DOUBLE_TAP_WINDOW:
             self._last_tap_time = 0.0
             with self.lock:
                 self.recording = True
                 self.audio_frames.clear()
+            dbg("doble tap: START grabación")
             play_sound("Tink")
             self._dispatch(self._set_title, ICON_RECORDING)
         else:
@@ -804,8 +966,17 @@ class WhisperDictationApp(rumps.App):
                 wf.setframerate(SAMPLE_RATE)
                 wf.writeframes(audio.tobytes())
 
+            dictionary = self.config.get("dictionary", [])
             text = transcribe(self.provider, self.client, path,
-                              self.config.get("language", "es"))
+                              self.config.get("language", "es"), dictionary)
+            dbg(f"transcripción: {len(text)} caracteres [{duration:.1f}s audio]")
+
+            if text and self.config.get("ai_format"):
+                try:
+                    text = ai_cleanup(self.provider, self.client, text, dictionary)
+                    dbg("formato IA aplicado")
+                except Exception as e:
+                    dbg(f"formato IA falló (uso texto original): {e}")
 
             if text:
                 with self.config_lock:
@@ -816,18 +987,19 @@ class WhisperDictationApp(rumps.App):
                 self._dispatch(self._build_menu)
 
                 subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
+                # Nuestro Cmd+V sintético no debe contar como toque del hotkey
+                self._suppress_until = time.time() + 1.0
                 subprocess.run(["osascript", "-e",
                     'tell application "System Events" to keystroke "v" using command down'],
                     check=True)
                 play_sound("Pop")
-                print(f"✓ [{duration:.1f}s] {text}")
             else:
                 play_sound("Funk")
-                print("⚠ Transcripción vacía — sin texto detectado")
+                dbg("transcripción vacía — sin texto detectado")
 
         except Exception as e:
             play_sound("Basso")
-            print(f"✗ Error de transcripción: {e}")
+            dbg(f"error de transcripción: {e}")
         finally:
             if path and os.path.exists(path):
                 os.unlink(path)
