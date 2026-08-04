@@ -80,10 +80,21 @@ curl -s 'https://api.github.com/repos/vasyl-pavlyuchok/whisper-dictation-vp/rele
 
 Espera con un bucle `until` en background — la CI tarda 5-15 min.
 
-## 5. Actualizar el README y la web
+## 5. Actualizar los README (bilingües) y la web
 
-- README: entrada de changelog + cualquier función nueva en la lista de funcionalidades.
-- La página de la app en vasylpavlyuchok.com debe reflejar versiones/funciones nuevas — usa la skill `publicar-vasylpavlyuchok` para eso.
+Los README son DOS y deben quedar sincronizados — publicamos en español pero el
+inglés tiene que existir sí o sí para llegar a las masas:
+
+- `README.md` — español, el principal. Entrada de changelog completa + funciones
+  nuevas en la lista de funcionalidades.
+- `README.en.md` — inglés. Mismas secciones y datos; el changelog inglés es un
+  resumen por versión que enlaza al changelog completo del español.
+- Ambos llevan el selector de idioma en la PRIMERA línea:
+  `🇪🇸 **Español** | [🇬🇧 English](README.en.md)` (y el inverso en el inglés).
+  Cualquier repo nuevo que se publique debe seguir este mismo patrón.
+
+La página de la app en vasylpavlyuchok.com debe reflejar versiones/funciones
+nuevas — usa la skill `publicar-vasylpavlyuchok` para eso.
 
 ## 6. Instalación local del usuario
 

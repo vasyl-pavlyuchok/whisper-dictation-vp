@@ -1,3 +1,5 @@
+🇪🇸 **Español** | [🇬🇧 English](README.en.md)
+
 # 🎙 Whisper Dictation VP
 
 [![Release](https://img.shields.io/github/v/release/vasyl-pavlyuchok/whisper-dictation-vp?label=versi%C3%B3n&color=84cc16)](../../releases/latest)
