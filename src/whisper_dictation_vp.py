@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.6.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.6.1
 """
 
-APP_VERSION = "3.6.0"
+APP_VERSION = "3.6.1"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -1252,13 +1252,21 @@ class WhisperDictationApp(rumps.App):
     # ── Audio ─────────────────────────────────────────────────────────────────
 
     def _close_stream(self):
+        """Libera el micrófono por completo: cerrar el stream no basta, porque
+        PortAudio mantiene el dispositivo reservado y con auriculares Bluetooth
+        el sistema no vuelve al perfil de alta calidad (A2DP)."""
         if getattr(self, "stream", None) is not None:
             try:
                 self.stream.stop(); self.stream.close()
-                dbg("micrófono liberado")
             except Exception as e:
-                dbg(f"error cerrando el micrófono: {e}")
+                dbg(f"error cerrando el stream: {e}")
             self.stream = None
+        try:
+            sd._terminate()
+            sd._initialize()
+            dbg("micrófono liberado (PortAudio reiniciado)")
+        except Exception as e:
+            dbg(f"no se pudo reiniciar PortAudio: {e}")
 
     def _open_stream(self):
         """Abre el micrófono para grabar. Devuelve True si lo consigue."""

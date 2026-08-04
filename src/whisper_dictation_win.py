@@ -3,10 +3,10 @@
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque en la tecla configurada (Alt izquierdo por defecto) para iniciar
 grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.6.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.6.1
 """
 
-APP_VERSION = "3.6.0"
+APP_VERSION = "3.6.1"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -610,17 +610,23 @@ class WhisperDictationWin:
             dbg(f"sin dispositivo de entrada: {e}")
 
     def _close_stream(self):
-        """Cierra el micrófono. IMPORTANTE con auriculares Bluetooth: mientras
-        el micro está abierto, Windows fuerza el perfil manos-libres (mono,
-        baja calidad) y la música suena mal. Cerrándolo al terminar cada
-        dictado, los auriculares vuelven a alta calidad (A2DP)."""
-        if self.stream is not None:
+        """Libera el micrófono por completo. Con auriculares Bluetooth, mientras
+        el micro está tomado Windows fuerza el perfil manos-libres (mono, baja
+        calidad) y la música suena mal. No basta con cerrar el stream:
+        PortAudio mantiene el dispositivo reservado, así que lo terminamos y
+        reinicializamos para que el sistema devuelva los auriculares a A2DP."""
+        if getattr(self, "stream", None) is not None:
             try:
                 self.stream.stop(); self.stream.close()
-                dbg("micrófono liberado")
             except Exception as e:
-                dbg(f"error cerrando el micrófono: {e}")
+                dbg(f"error cerrando el stream: {e}")
             self.stream = None
+        try:
+            sd._terminate()
+            sd._initialize()
+            dbg("micrófono liberado (PortAudio reiniciado)")
+        except Exception as e:
+            dbg(f"no se pudo reiniciar PortAudio: {e}")
 
     def _open_stream(self):
         """Abre el micrófono SOLO durante la grabación (ver _close_stream)."""
@@ -947,6 +953,7 @@ class WhisperDictationWin:
             self._stop_tap = True
             play_sound("stop")
             dbg(f"grabación parada — {len(frames)} bloques de audio")
+            self._close_stream()
             self._set_state("processing")
             threading.Thread(target=self._process, args=(frames,), daemon=True).start()
 

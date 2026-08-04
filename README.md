@@ -161,6 +161,9 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.6.1 (macOS y Windows)
+- **El micrófono se libera de verdad al terminar el dictado** — en la v3.6.0 el cierre no llegaba a ejecutarse en Windows y, además, PortAudio mantenía el dispositivo reservado aunque se cerrara el stream: los auriculares Bluetooth se quedaban en modo manos-libres (mono) y la música seguía sonando mal. Ahora se cierra el stream y se reinicia PortAudio, devolviendo los auriculares a alta calidad (A2DP)
+
 ### v3.6.0 (macOS y Windows)
 - **El micrófono solo se abre mientras grabas** — antes permanecía abierto todo el tiempo, lo que con auriculares Bluetooth forzaba el perfil manos-libres (mono, baja calidad) y degradaba la música que estuvieras escuchando. Ahora se abre al empezar el dictado y se libera al terminar: tus auriculares se quedan en alta calidad salvo esos segundos
 - Si el micrófono no se puede abrir, la grabación se cancela con aviso sonoro en vez de grabar en vacío
