@@ -1,5 +1,5 @@
 ---
-name: release
+name: whisper-dictation-vp-release
 description: Publica una nueva versión de Whisper Dictation VP de principio a fin — sincronización de versión en todos los archivos, tests del motor de toques, build del .pkg, commit, tag y release automática en GitHub. Usa esta skill siempre que haya que sacar una versión nueva, subir un fix, "hacer release", "publicar la app", bump de versión, o cuando cambios en src/ estén listos para llegar a los usuarios — aunque no se mencione la palabra release.
 ---
 
