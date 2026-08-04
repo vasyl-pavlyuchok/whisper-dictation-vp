@@ -161,6 +161,10 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.5.1 (solo Windows — en Mac puedes ignorar esta actualización)
+- **Selector de micrófono en el menú** — caso real diagnosticado: Windows daba como entrada predeterminada el micrófono de una webcam que no captaba nada (RMS plano) y la app "no transcribía"; ahora eliges el micrófono correcto desde el menú de la bandeja y queda guardado
+- El log registra el micrófono activo y cada cambio de dispositivo
+
 ### v3.5.0 (solo Windows — en Mac puedes ignorar esta actualización)
 - **Instalador de verdad (`WhisperDictationVP-Windows-Setup.exe`)** — asistente Inno Setup con selección de idioma (ES/EN), página informativa obligatoria que explica la API gratuita de Groq, los 16 idiomas con detección automática y el aviso de SmartScreen (y por qué aparece: los certificados cuestan 200–400 €/año y esta app es gratuita), instalación por usuario sin permisos de administrador, y opción de inicio automático con Windows
 - **Indicador flotante minimalista de solo iconos** — micrófono Lucide blanco sobre rojo al grabar, spinner sobre ámbar al transcribir; sin texto: universal en cualquier idioma

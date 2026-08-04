@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.5.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.5.1
 """
 
-APP_VERSION = "3.5.0"
+APP_VERSION = "3.5.1"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -93,6 +93,7 @@ def load_config():
     config.setdefault("ai_format", False)
     config.setdefault("dictionary", [])
     config.setdefault("check_updates", True)
+    config.setdefault("input_device", None)
     if not config["providers"] and os.environ.get("GROQ_API_KEY"):
         config["providers"]["groq"] = os.environ.get("GROQ_API_KEY")
     return config
@@ -440,29 +441,8 @@ class WhisperDictationWin:
         self._build_client()
 
         self.overlay = StatusOverlay()
-
-        try:
-            dev = sd.query_devices(kind="input")
-            dbg(f"micrófono de entrada: {dev.get('name')} "
-                f"(canales: {dev.get('max_input_channels')})")
-        except Exception as e:
-            dbg(f"sin dispositivo de entrada: {e}")
-
-        try:
-            self.stream = sd.InputStream(
-                samplerate=SAMPLE_RATE, channels=CHANNELS,
-                dtype=DTYPE, callback=self._audio_callback, blocksize=1024,
-            )
-            self.stream.start()
-            dbg("stream de audio iniciado")
-        except Exception as e:
-            dbg(f"ERROR abriendo el micrófono: {e}")
-            dialog_info(
-                "No se pudo abrir el micrófono.\n\n"
-                "Comprueba: Configuración → Privacidad y seguridad → "
-                "Micrófono → activa «Permitir que las aplicaciones de "
-                "escritorio accedan al micrófono».")
-            raise
+        self.stream = None
+        self._open_stream()
 
         self._listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release)
@@ -480,6 +460,72 @@ class WhisperDictationWin:
         threading.Thread(target=self._update_check_loop, daemon=True).start()
         dbg(f"app v{APP_VERSION} iniciada — hotkey={self.config.get('hotkey')} "
             f"proveedor={self.config.get('active_provider')}")
+
+    # ── Micrófono ─────────────────────────────────────────────────────────────
+
+    def _input_devices(self):
+        """Micrófonos disponibles, sin duplicados (Windows repite cada
+        dispositivo por host API)."""
+        seen, result = set(), []
+        try:
+            for idx, dev in enumerate(sd.query_devices()):
+                name = dev.get("name", "").strip()
+                if dev.get("max_input_channels", 0) > 0 and name not in seen:
+                    seen.add(name)
+                    result.append((idx, name))
+        except Exception as e:
+            dbg(f"no se pudieron listar micrófonos: {e}")
+        return result
+
+    def _resolve_device(self):
+        """Índice del micrófono elegido en config, o None (predeterminado)."""
+        wanted = self.config.get("input_device")
+        if not wanted:
+            return None
+        for idx, name in self._input_devices():
+            if name == wanted:
+                return idx
+        dbg(f"micrófono guardado no encontrado: {wanted} — uso el predeterminado")
+        return None
+
+    def _open_stream(self):
+        if self.stream is not None:
+            try:
+                self.stream.stop(); self.stream.close()
+            except Exception:
+                pass
+            self.stream = None
+        device = self._resolve_device()
+        try:
+            info = sd.query_devices(device if device is not None else None,
+                                    kind="input")
+            dbg(f"micrófono de entrada: {info.get('name')} "
+                f"(canales: {info.get('max_input_channels')})")
+        except Exception as e:
+            dbg(f"sin dispositivo de entrada: {e}")
+        try:
+            self.stream = sd.InputStream(
+                samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE,
+                device=device, callback=self._audio_callback, blocksize=1024,
+            )
+            self.stream.start()
+            dbg("stream de audio iniciado")
+        except Exception as e:
+            dbg(f"ERROR abriendo el micrófono: {e}")
+            dialog_info(
+                "No se pudo abrir el micrófono.\n\n"
+                "Comprueba: Configuración → Privacidad y seguridad → "
+                "Micrófono → activa «Permitir que las aplicaciones de "
+                "escritorio accedan al micrófono».")
+
+    def _make_mic_action(self, name):
+        def action(icon, item):
+            with self.config_lock:
+                self.config["input_device"] = name
+                save_config(self.config)
+            dbg(f"micrófono cambiado a: {name or '(predeterminado)'}")
+            self._open_stream()
+        return action
 
     def _update_check_loop(self):
         time.sleep(15)
@@ -602,10 +648,23 @@ class WhisperDictationWin:
                 f"⬆️ Nueva versión v{self._update_available} — descargar",
                 self._open_download_page)]
 
+        current_mic = cfg.get("input_device")
+        mic_items = [pystray.MenuItem(
+            "Predeterminado de Windows",
+            self._make_mic_action(None),
+            checked=lambda item: not self.config.get("input_device"),
+            radio=True)]
+        for _, name in self._input_devices():
+            mic_items.append(pystray.MenuItem(
+                name, self._make_mic_action(name),
+                checked=lambda item, n=name: self.config.get("input_device") == n,
+                radio=True))
+
         return [
             pystray.MenuItem(f"Whisper Dictation VP v{APP_VERSION}", None, enabled=False),
             *update_items,
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Micrófono", pystray.Menu(*mic_items)),
             pystray.MenuItem("Proveedor", pystray.Menu(*provider_items)),
             pystray.MenuItem("Idioma", pystray.Menu(*lang_items)),
             pystray.MenuItem(f"Tecla: {hotkey_name} (doble-toque)",
