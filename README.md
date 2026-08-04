@@ -161,6 +161,13 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.5.2 (solo Windows — en Mac puedes ignorar esta actualización)
+- **El dictado ya no te borra el portapapeles** — antes cada transcripción vaciaba el portapapeles y lo sustituía: copiabas algo, dictabas una frase y al pegar aparecía la frase dictada en vez de lo tuyo. Ahora se guarda lo que hubiera, se pega la transcripción y se restaura. La transcripción sigue disponible en el historial del menú
+- **Corregidas las llamadas al portapapeles de Windows en 64 bits** — `GlobalAlloc` y `GlobalLock` se llamaban sin declarar el tipo de retorno, así que ctypes asumía un entero de 32 bits y truncaba los punteros de 64: el `memmove` escribía en una dirección equivocada. Funcionaba de milagro (el heap suele caer por debajo de los 4 GB); cuando no, era corrupción de memoria o cierre en seco. Ahora todas las firmas están declaradas y se comprueban los errores
+- **Instancia única** — el instalador crea acceso directo en el menú Inicio y en el arranque de Windows, así que era fácil acabar con dos copias escuchando la misma tecla: las dos grababan y las dos pegaban, y el texto salía duplicado. Ahora un mutex con nombre lo impide (la versión de macOS ya se protegía; esta no tenía nada)
+- **Sin cortes de audio al parar la grabación** — el pitido (`winsound.Beep`, que bloquea 120 ms) y el redibujado del icono se hacían reteniendo el mismo lock que necesita el hilo de tiempo real de PortAudio, con overflows justo al cerrar la grabación. Ahora dentro del lock solo va lo imprescindible
+- El aviso de bienvenida decía «Alt derecho» cuando la tecla por defecto pasó a ser Alt izquierdo en la v3.4.1; ahora se lee de la configuración
+
 ### v3.5.1 (solo Windows — en Mac puedes ignorar esta actualización)
 - **Selector de micrófono en el menú** — caso real diagnosticado: Windows daba como entrada predeterminada el micrófono de una webcam que no captaba nada (RMS plano) y la app "no transcribía"; ahora eliges el micrófono correcto desde el menú de la bandeja y queda guardado
 - El log registra el micrófono activo y cada cambio de dispositivo

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 Whisper Dictation VP — Dictado por voz para Windows (beta).
-Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.5.1
+Doble-toque en la tecla configurada (Alt izquierdo por defecto) para iniciar
+grabación. Toque simple para detener.
+Diseñado por Vasyl Pavlyuchok & Claude — v3.5.2
 """
 
-APP_VERSION = "3.5.1"
+APP_VERSION = "3.5.2"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -77,6 +78,34 @@ def dbg(msg):
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
     except Exception:
         pass
+
+def acquire_single_instance_lock():
+    """Garantiza una sola instancia mediante un mutex con nombre.
+
+    El instalador crea acceso directo en el menú Inicio Y en el arranque de
+    Windows, y además lanza la app al terminar. Es fácil acabar con dos copias
+    vivas: las dos escuchan el mismo hotkey, las dos graban y las dos pegan,
+    así que el texto sale duplicado. La versión de macOS ya se protegía con un
+    flock; esta no tenía nada.
+
+    Devuelve el handle del mutex (hay que conservarlo vivo) o None si ya hay
+    otra instancia.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+        ERROR_ALREADY_EXISTS = 183
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL,
+                                   wintypes.LPCWSTR]
+        k.CreateMutexW.restype  = ctypes.c_void_p
+        handle = k.CreateMutexW(None, False, "WhisperDictationVP_SingleInstance")
+        if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
+            return None
+        return handle or True
+    except Exception as e:
+        dbg(f"no se pudo crear el mutex de instancia única: {e}")
+        return True  # ante la duda, dejamos arrancar
 
 # ── Config (mismo formato que la versión macOS) ───────────────────────────────
 
@@ -180,31 +209,113 @@ def dialog_choice_list(prompt, options):
 
 # ── Portapapeles y pegado ─────────────────────────────────────────────────────
 
-def set_clipboard(text):
+CF_UNICODETEXT = 13
+GMEM_MOVEABLE  = 0x0002
+
+def _win_api():
+    """user32/kernel32 con las firmas DECLARADAS.
+
+    Sin declarar restype, ctypes asume int de 32 bits. En Windows de 64 bits
+    los HANDLE y los punteros son de 64, así que GlobalAlloc/GlobalLock
+    devolvían el valor TRUNCADO a 32 bits: el memmove escribía en una
+    dirección equivocada. Suele colar porque el heap cae por debajo de los
+    4 GB, pero cuando no, es corrupción de memoria o cierre en seco de la app.
+    """
     import ctypes
-    CF_UNICODETEXT = 13
-    GMEM_MOVEABLE = 0x0002
-    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    from ctypes import wintypes
+    u, k = ctypes.windll.user32, ctypes.windll.kernel32
+    u.OpenClipboard.argtypes             = [wintypes.HWND]
+    u.OpenClipboard.restype              = wintypes.BOOL
+    u.CloseClipboard.restype             = wintypes.BOOL
+    u.EmptyClipboard.restype             = wintypes.BOOL
+    u.IsClipboardFormatAvailable.argtypes = [wintypes.UINT]
+    u.IsClipboardFormatAvailable.restype  = wintypes.BOOL
+    u.GetClipboardData.argtypes          = [wintypes.UINT]
+    u.GetClipboardData.restype           = ctypes.c_void_p
+    u.SetClipboardData.argtypes          = [wintypes.UINT, ctypes.c_void_p]
+    u.SetClipboardData.restype           = ctypes.c_void_p
+    k.GlobalAlloc.argtypes               = [wintypes.UINT, ctypes.c_size_t]
+    k.GlobalAlloc.restype                = ctypes.c_void_p
+    k.GlobalLock.argtypes                = [ctypes.c_void_p]
+    k.GlobalLock.restype                 = ctypes.c_void_p
+    k.GlobalUnlock.argtypes              = [ctypes.c_void_p]
+    k.GlobalUnlock.restype               = wintypes.BOOL
+    k.GlobalFree.argtypes                = [ctypes.c_void_p]
+    k.GlobalFree.restype                 = ctypes.c_void_p
+    return ctypes, u, k
+
+def get_clipboard():
+    """Texto del portapapeles, o None si está vacío o no contiene texto."""
+    try:
+        ctypes, u, k = _win_api()
+        if not u.IsClipboardFormatAvailable(CF_UNICODETEXT):
+            return None
+        if not u.OpenClipboard(None):
+            return None
+        try:
+            handle = u.GetClipboardData(CF_UNICODETEXT)
+            if not handle:
+                return None
+            ptr = k.GlobalLock(handle)
+            if not ptr:
+                return None
+            try:
+                return ctypes.c_wchar_p(ptr).value
+            finally:
+                k.GlobalUnlock(handle)
+        finally:
+            u.CloseClipboard()
+    except Exception as e:
+        dbg(f"no se pudo leer el portapapeles: {e}")
+        return None
+
+def set_clipboard(text):
+    ctypes, u, k = _win_api()
     data = text.encode("utf-16-le") + b"\x00\x00"
-    if not user32.OpenClipboard(None):
+    if not u.OpenClipboard(None):
         raise RuntimeError("No se pudo abrir el portapapeles")
     try:
-        user32.EmptyClipboard()
-        handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
-        ptr = kernel32.GlobalLock(handle)
+        u.EmptyClipboard()
+        handle = k.GlobalAlloc(GMEM_MOVEABLE, len(data))
+        if not handle:
+            raise RuntimeError("GlobalAlloc falló")
+        ptr = k.GlobalLock(handle)
+        if not ptr:
+            k.GlobalFree(handle)
+            raise RuntimeError("GlobalLock falló")
         ctypes.memmove(ptr, data, len(data))
-        kernel32.GlobalUnlock(handle)
-        user32.SetClipboardData(CF_UNICODETEXT, handle)
+        k.GlobalUnlock(handle)
+        if not u.SetClipboardData(CF_UNICODETEXT, handle):
+            # Si falla, la memoria sigue siendo nuestra y hay que liberarla;
+            # si va bien, pasa a ser del sistema y NO se debe tocar.
+            k.GlobalFree(handle)
+            raise RuntimeError("SetClipboardData falló")
     finally:
-        user32.CloseClipboard()
+        u.CloseClipboard()
 
 def paste_text(text):
+    """Pega el texto y DEVUELVE el portapapeles a como estaba.
+
+    Sin esto, cada dictado se lleva por delante lo que tuvieras copiado: el
+    usuario copia algo, dicta una frase y al pegar se encuentra la frase
+    dictada en vez de lo suyo. La transcripción no se pierde — queda en el
+    historial del menú.
+    """
+    previous = get_clipboard()
     set_clipboard(text)
     time.sleep(0.15)
     kb = KeyboardController()
     with kb.pressed(Key.ctrl):
         kb.press("v")
         kb.release("v")
+    if previous is not None and previous != text:
+        # Margen para que la app de destino termine de leer el portapapeles
+        # antes de restaurarlo; si se restaura demasiado pronto, pega lo viejo.
+        time.sleep(0.4)
+        try:
+            set_clipboard(previous)
+        except Exception as e:
+            dbg(f"no se pudo restaurar el portapapeles: {e}")
 
 # ── Transcripción (idéntica a la versión macOS) ───────────────────────────────
 
@@ -573,9 +684,16 @@ class WhisperDictationWin:
         self.config["providers"][provider] = api_key
         self.config["active_provider"] = provider
         save_config(self.config)
+        # La tecla se lee de la config: desde la v3.4.1 el valor por defecto es
+        # Alt izquierdo (en teclados ES el Alt derecho es AltGr y pynput lo
+        # reporta como una tecla distinta), pero este aviso seguía diciendo
+        # «Alt derecho» — la gente pulsaba una tecla que no estaba escuchando.
+        key_name = HOTKEY_NAMES.get(self.config.get("hotkey", "alt"),
+                                    self.config.get("hotkey", "alt"))
         dialog_info(
-            "¡Listo! Doble-toque en Alt derecho para grabar,\n"
+            f"¡Listo! Doble-toque en {key_name} para grabar,\n"
             "toque simple para detener.\n\n"
+            "Puedes cambiar la tecla en el menú del icono de la bandeja.\n"
             "El texto se pega automáticamente donde estés escribiendo.")
 
     # ── Cliente ───────────────────────────────────────────────────────────────
@@ -800,15 +918,23 @@ class WhisperDictationWin:
         self._key_down = True
         self._stop_tap = False
 
+        # Dentro del lock, lo mínimo. Antes aquí se llamaba a winsound.Beep
+        # (que BLOQUEA 120 ms) y a make_icon() con el lock cogido — y ese es el
+        # mismo lock que pide _audio_callback, que corre en el hilo de tiempo
+        # real de PortAudio. Resultado: el audio se quedaba sin atender justo
+        # al cerrar la grabación, con cortes y overflows.
+        frames = None
         with self.lock:
             if self.recording:
-                self._stop_tap = True
                 self.recording = False
                 frames         = list(self.audio_frames)
-                play_sound("stop")
-                dbg(f"grabación parada — {len(frames)} bloques de audio")
-                self._set_state("processing")
-                threading.Thread(target=self._process, args=(frames,), daemon=True).start()
+
+        if frames is not None:
+            self._stop_tap = True
+            play_sound("stop")
+            dbg(f"grabación parada — {len(frames)} bloques de audio")
+            self._set_state("processing")
+            threading.Thread(target=self._process, args=(frames,), daemon=True).start()
 
     def _on_release(self, key, injected=False):
         if injected:
@@ -928,4 +1054,8 @@ class WhisperDictationWin:
 
 
 if __name__ == "__main__":
+    _instance_lock = acquire_single_instance_lock()
+    if _instance_lock is None:
+        dbg("instancia duplicada — saliendo")
+        sys.exit(0)
     WhisperDictationWin().run()

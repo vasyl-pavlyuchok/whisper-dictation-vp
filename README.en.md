@@ -150,6 +150,7 @@ rm -f ~/.whisper_dictation_vp.json
 
 See the full changelog (in Spanish) in [README.md](README.md#changelog). Highlights:
 
+- **v3.5.2** (Windows only) — dictation no longer wipes your clipboard (it is saved and restored around the paste); fixed 64-bit `ctypes` clipboard calls that truncated pointers; single-instance mutex so two copies can't both listen, record and paste; no more audio dropouts when stopping a recording
 - **v3.2.0** — update notifications with opt-out toggle; dual hotkey listening channel (native NSEvent monitor + pynput)
 - **v3.1.x** — AI Format (LLM cleanup), personal dictionary, automatic language detection with 17 language options, native clipboard, critical hotkey fixes
 - **v3.0.0** — fully native macOS app (embedded Python), Windows beta, CI/CD releases
