@@ -158,6 +158,11 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.3.0
+- **Interfaz bilingüe (ES/EN)** — la app detecta el idioma del sistema y muestra menús y diálogos en español o inglés; conmutador «Interfaz» en el menú para cambiarlo al vuelo *(macOS; Windows en la próxima versión)*
+- **Instalador localizado** — el instalador de macOS se muestra en el idioma del sistema (recursos `.lproj`) y los avisos post-instalación son bilingües
+- **Menú sin emojis** — etiquetas limpias y profesionales al estilo de las apps nativas de macOS
+
 ### v3.2.0
 - **🔔 Notificaciones de actualización** — la app comprueba GitHub al arrancar (y cada 24 h); si hay versión nueva muestra una notificación y una entrada «⬆️ Nueva versión — descargar» en el menú (macOS y Windows). Desactivable con un clic desde el menú («🔔 Avisar de actualizaciones»)
 - **Doble canal de escucha del hotkey** — NSEvent global monitor (API nativa de macOS) + pynput con dedupe: si un canal falla, el otro sigue funcionando (arregla el caso «permiso concedido pero la tecla no responde»)

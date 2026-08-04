@@ -7,11 +7,16 @@ PLIST="$USER_HOME/Library/LaunchAgents/com.vasyl.whisper-dictation-vp.plist"
 
 as_user() { sudo -u "$CURRENT_USER" "$@"; }
 
+# Idioma del usuario de la sesión (es → español; cualquier otro → inglés)
+USER_LANG=$(as_user defaults read -g AppleLocale 2>/dev/null | cut -c1-2)
+[ "$USER_LANG" = "es" ] || USER_LANG="en"
+
 dialog_ok() {
   # $1=mensaje $2=titulo $3=icono
+  OK_BTN="Entendido"; [ "$USER_LANG" = "en" ] && OK_BTN="Got it"
   as_user osascript -e "tell application \"System Events\"
     activate
-    display dialog \"$1\" with title \"$2\" buttons {\"Entendido\"} default button 1 with icon $3
+    display dialog \"$1\" with title \"$2\" buttons {\"$OK_BTN\"} default button 1 with icon $3
   end tell" 2>/dev/null || true
 }
 
@@ -59,9 +64,10 @@ chown "$CURRENT_USER" "$PLIST"
 as_user launchctl unload "$PLIST" 2>/dev/null || true
 as_user launchctl load "$PLIST" 2>/dev/null || true
 
-# ── 4. Instrucciones de Accesibilidad ────────────────────────────────────────
+# ── 4. Instrucciones de Accesibilidad (bilingüe) ─────────────────────────────
+if [ "$USER_LANG" = "es" ]; then
 dialog_ok \
-"✅ Whisper Dictation VP 3.2.0 instalada correctamente.
+"✅ Whisper Dictation VP 3.3.0 instalada correctamente.
 
 ÚLTIMO PASO — al abrirse la app, macOS pedirá el permiso de Accesibilidad:
 
@@ -71,6 +77,19 @@ dialog_ok \
 
 Este paso se pide en cada actualización porque la firma de la app cambia; es normal y solo hay que hacerlo una vez por versión." \
 "Whisper Dictation VP instalada" "note"
+else
+dialog_ok \
+"✅ Whisper Dictation VP 3.3.0 installed successfully.
+
+LAST STEP — when the app opens, macOS will ask for the Accessibility permission:
+
+1. Click 'Open System Settings' in the prompt
+2. Enable the 'Whisper Dictation VP' checkbox
+3. Quit the app (🎙 icon → Quit) and open it again
+
+This step is required after each update because the app's signature changes; it's normal and only needed once per version." \
+"Whisper Dictation VP installed" "note"
+fi
 
 # ── 5. Lanzar la app al finalizar ────────────────────────────────────────────
 as_user open -a "Whisper Dictation VP" 2>/dev/null || true

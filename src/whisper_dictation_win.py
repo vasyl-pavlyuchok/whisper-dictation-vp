@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.2.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.3.0
 """
 
-APP_VERSION = "3.2.0"
+APP_VERSION = "3.3.0"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np

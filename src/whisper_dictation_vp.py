@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.2.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.3.0
 """
 
-APP_VERSION = "3.2.0"
+APP_VERSION = "3.3.0"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -30,24 +30,126 @@ PROVIDERS = {
     "assemblyai": {"name": "AssemblyAI",      "url": "app.assemblyai.com",     "placeholder": "..."},
 }
 
-LANGUAGES = {
-    "auto":  "Automático (detecta el idioma)",
-    "es":    "Español",
-    "en":    "Inglés",
-    "uk":    "Ucraniano",
-    "fr":    "Francés",
-    "de":    "Alemán",
-    "it":    "Italiano",
-    "pt":    "Portugués",
-    "zh":    "Chino",
-    "ru":    "Ruso",
-    "ar":    "Árabe",
-    "hi":    "Hindi",
-    "ja":    "Japonés",
-    "ko":    "Coreano",
-    "tr":    "Turco",
-    "pl":    "Polaco",
-    "nl":    "Neerlandés",
+# ── Internacionalización de la interfaz (ES/EN) ───────────────────────────────
+
+def system_ui_lang():
+    """Idioma preferido del sistema: 'es' o 'en' (fallback)."""
+    try:
+        from Foundation import NSLocale
+        code = str(NSLocale.preferredLanguages()[0])[:2].lower()
+        return "es" if code == "es" else "en"
+    except Exception:
+        return "es"
+
+LANGUAGES_I18N = {
+    "es": {
+        "auto": "Automático (detecta el idioma)",
+        "es": "Español", "en": "Inglés", "uk": "Ucraniano", "fr": "Francés",
+        "de": "Alemán", "it": "Italiano", "pt": "Portugués", "zh": "Chino",
+        "ru": "Ruso", "ar": "Árabe", "hi": "Hindi", "ja": "Japonés",
+        "ko": "Coreano", "tr": "Turco", "pl": "Polaco", "nl": "Neerlandés",
+    },
+    "en": {
+        "auto": "Automatic (detect language)",
+        "es": "Spanish", "en": "English", "uk": "Ukrainian", "fr": "French",
+        "de": "German", "it": "Italian", "pt": "Portuguese", "zh": "Chinese",
+        "ru": "Russian", "ar": "Arabic", "hi": "Hindi", "ja": "Japanese",
+        "ko": "Korean", "tr": "Turkish", "pl": "Polish", "nl": "Dutch",
+    },
+}
+LANGUAGES = LANGUAGES_I18N["es"]  # compatibilidad; se resuelve por ui_lang
+
+TR = {
+    "es": {
+        "yes": "Sí", "no": "No", "cancel": "Cancelar",
+        "provider": "Proveedor", "language": "Idioma",
+        "hotkey_line": "Tecla: {} (doble-toque)",
+        "history": "Historial", "empty": "(vacío)",
+        "clear_history": "Limpiar historial",
+        "copy": "Copiar", "open_edit": "Abrir / Editar",
+        "settings": "Configuración…", "quit": "Salir",
+        "ai_format": "Formato IA", "ai_requires": " (requiere Groq/OpenAI)",
+        "dictionary": "Diccionario", "add_word": "Añadir palabra…",
+        "delete": "Eliminar",
+        "updates": "Avisar de actualizaciones",
+        "ui_lang": "Interfaz: Español",
+        "new_version": "Nueva versión v{} — descargar",
+        "notif_title": "Nueva versión v{} disponible",
+        "notif_body": "Descárgala desde el menú 🎙 de la barra.",
+        "dlg_add_word": "Añade una palabra o nombre propio que Whisper suela "
+                        "transcribir mal (p. ej. «Techbooster», «Vasyl»):",
+        "dlg_settings_what": "¿Qué quieres configurar?",
+        "dlg_hotkey_option": "Tecla de activación",
+        "dlg_select_hotkey": "Selecciona la tecla de activación:",
+        "dlg_select_provider": "Selecciona el proveedor de transcripción:",
+        "dlg_api_key": "API Key de {}\n({}):",
+        "dlg_all_configured": "Ya tienes todos los proveedores configurados.",
+        "dlg_apis_header": "APIs configuradas:",
+        "dlg_none": "(ninguna)", "dlg_what_do": "¿Qué quieres hacer?",
+        "dlg_manage": "Gestionar existentes", "dlg_add_api": "Añadir nueva API",
+        "dlg_select_manage": "Selecciona el proveedor a gestionar:",
+        "dlg_active": " (activo)", "dlg_use_this": "Usar este",
+        "dlg_change_key": "Cambiar API key",
+        "dlg_confirm_delete": "¿Eliminar {}?",
+        "ax_help": "Whisper Dictation VP necesita el permiso de Accesibilidad "
+                   "para detectar la tecla de dictado y pegar el texto.\n\n"
+                   "En el aviso de macOS pulsa «Abrir Ajustes del Sistema» y "
+                   "activa «Whisper Dictation VP».\n\n"
+                   "Después sal de la app (icono 🎙 → Salir) y vuelve a abrirla.",
+        "ax_open": "Abrir Ajustes", "ok": "OK",
+        "hotkeys": {
+            "alt_r": "Option derecho", "alt": "Option izquierdo",
+            "alt_l": "Option izquierdo", "cmd": "Command izquierdo",
+            "cmd_l": "Command izquierdo", "cmd_r": "Command derecho",
+            "ctrl": "Control izquierdo", "ctrl_l": "Control izquierdo",
+            "ctrl_r": "Control derecho",
+        },
+    },
+    "en": {
+        "yes": "Yes", "no": "No", "cancel": "Cancel",
+        "provider": "Provider", "language": "Language",
+        "hotkey_line": "Key: {} (double-tap)",
+        "history": "History", "empty": "(empty)",
+        "clear_history": "Clear history",
+        "copy": "Copy", "open_edit": "Open / Edit",
+        "settings": "Settings…", "quit": "Quit",
+        "ai_format": "AI Format", "ai_requires": " (requires Groq/OpenAI)",
+        "dictionary": "Dictionary", "add_word": "Add word…",
+        "delete": "Delete",
+        "updates": "Notify about updates",
+        "ui_lang": "Interface: English",
+        "new_version": "New version v{} — download",
+        "notif_title": "New version v{} available",
+        "notif_body": "Download it from the 🎙 menu bar icon.",
+        "dlg_add_word": "Add a word or proper noun that Whisper tends to "
+                        "get wrong (e.g. “Techbooster”, “Vasyl”):",
+        "dlg_settings_what": "What do you want to configure?",
+        "dlg_hotkey_option": "Activation key",
+        "dlg_select_hotkey": "Choose the activation key:",
+        "dlg_select_provider": "Choose the transcription provider:",
+        "dlg_api_key": "{} API Key\n({}):",
+        "dlg_all_configured": "All providers are already configured.",
+        "dlg_apis_header": "Configured APIs:",
+        "dlg_none": "(none)", "dlg_what_do": "What do you want to do?",
+        "dlg_manage": "Manage existing", "dlg_add_api": "Add new API",
+        "dlg_select_manage": "Choose the provider to manage:",
+        "dlg_active": " (active)", "dlg_use_this": "Use this one",
+        "dlg_change_key": "Change API key",
+        "dlg_confirm_delete": "Delete {}?",
+        "ax_help": "Whisper Dictation VP needs the Accessibility permission "
+                   "to detect the dictation key and paste the text.\n\n"
+                   "In the macOS prompt click “Open System Settings” and "
+                   "enable “Whisper Dictation VP”.\n\n"
+                   "Then quit the app (🎙 icon → Quit) and open it again.",
+        "ax_open": "Open Settings", "ok": "OK",
+        "hotkeys": {
+            "alt_r": "Right Option", "alt": "Left Option",
+            "alt_l": "Left Option", "cmd": "Left Command",
+            "cmd_l": "Left Command", "cmd_r": "Right Command",
+            "ctrl": "Left Control", "ctrl_l": "Left Control",
+            "ctrl_r": "Right Control",
+        },
+    },
 }
 
 # Keycodes físicos de macOS por hotkey. Las claves legacy (cmd_l, ctrl_l,
@@ -301,6 +403,7 @@ def load_config():
     config.setdefault("ai_format", False)
     config.setdefault("dictionary", [])
     config.setdefault("check_updates", True)
+    config.setdefault("ui_lang", system_ui_lang())
     if not config["providers"] and os.environ.get("GROQ_API_KEY"):
         config["providers"]["groq"] = os.environ.get("GROQ_API_KEY")
     if not config["providers"] and os.environ.get("WHISPER_API_KEY"):
@@ -637,8 +740,8 @@ class WhisperDictationApp(rumps.App):
                         try:
                             rumps.notification(
                                 "Whisper Dictation VP",
-                                f"Nueva versión v{latest} disponible",
-                                "Descárgala desde el menú 🎙 de la barra.")
+                                self._t("notif_title").format(latest),
+                                self._t("notif_body"))
                         except Exception as e:
                             dbg(f"notificación falló: {e}")
                 else:
@@ -688,13 +791,9 @@ class WhisperDictationApp(rumps.App):
 
     def _ax_help_dialog(self):
         choice = dialog_choice(
-            "Whisper Dictation VP necesita el permiso de Accesibilidad para "
-            "detectar la tecla de dictado y pegar el texto.\n\n"
-            "En el aviso de macOS pulsa «Abrir Ajustes del Sistema» y activa "
-            "«Whisper Dictation VP».\n\n"
-            "Después sal de la app (icono 🎙 → Salir) y vuelve a abrirla.",
-            "Abrir Ajustes", "OK")
-        if choice == "Abrir Ajustes":
+            self._t("ax_help"),
+            self._t("ax_open"), self._t("ok"))
+        if choice == self._t("ax_open"):
             subprocess.Popen(["open",
                 "x-apple.systempreferences:com.apple.preference.security"
                 "?Privacy_Accessibility"])
@@ -723,16 +822,35 @@ class WhisperDictationApp(rumps.App):
         self.provider = provider
         self.client   = build_client(provider, api_key)
 
+    # ── i18n helpers ──────────────────────────────────────────────────────────
+
+    def _t(self, key):
+        lang = self.config.get("ui_lang", "es")
+        return TR.get(lang, TR["es"]).get(key, TR["es"].get(key, key))
+
+    def _langs(self):
+        return LANGUAGES_I18N.get(self.config.get("ui_lang", "es"),
+                                  LANGUAGES_I18N["es"])
+
+    def _toggle_ui_lang(self, _):
+        with self.config_lock:
+            current = self.config.get("ui_lang", "es")
+            self.config["ui_lang"] = "en" if current == "es" else "es"
+            save_config(self.config)
+        self._build_menu()
+
     def _build_menu(self):
+        t = self._t
         active_provider = self.config["active_provider"]
         active_lang     = self.config["language"]
-        hotkey_name     = HOTKEY_NAMES.get(self.config["hotkey"], self.config["hotkey"])
+        hotkey_name     = t("hotkeys").get(self.config["hotkey"],
+                                           self.config["hotkey"])
 
         # ── Submenú Proveedor ─────────────────────────────────────────────────
         configured = list(self.config["providers"].keys())
         active_provider_name = PROVIDERS.get(active_provider, {}).get("name", active_provider)
-        active_lang_name     = LANGUAGES.get(active_lang, active_lang)
-        provider_menu = rumps.MenuItem(f"Proveedor: {active_provider_name}")
+        active_lang_name     = self._langs().get(active_lang, active_lang)
+        provider_menu = rumps.MenuItem(f"{t('provider')}: {active_provider_name}")
         for p in configured:
             name = PROVIDERS.get(p, {}).get("name", p)
             mark = "✓ " if p == active_provider else "    "
@@ -745,8 +863,8 @@ class WhisperDictationApp(rumps.App):
                 provider_menu.add(rumps.MenuItem(f"{mark}{name}"))
 
         # ── Submenú Idioma ────────────────────────────────────────────────────
-        lang_menu = rumps.MenuItem(f"Idioma: {active_lang_name}")
-        for key, name in LANGUAGES.items():
+        lang_menu = rumps.MenuItem(f"{t('language')}: {active_lang_name}")
+        for key, name in self._langs().items():
             mark = "✓ " if key == active_lang else "    "
             lang_menu.add(rumps.MenuItem(
                 f"{mark}{name}",
@@ -754,55 +872,55 @@ class WhisperDictationApp(rumps.App):
             ))
 
         # ── Submenú Historial ─────────────────────────────────────────────────
-        history_menu = rumps.MenuItem("Historial")
+        history_menu = rumps.MenuItem(t("history"))
         history = self.config.get("history", [])
         if history:
             for item in history:
                 short = item[:65] + "…" if len(item) > 65 else item
                 item_menu = rumps.MenuItem(short)
                 item_menu.add(rumps.MenuItem(
-                    "Copiar",
-                    callback=lambda _, t=item: self._copy_history_item(t)
+                    t("copy"),
+                    callback=lambda _, x=item: self._copy_history_item(x)
                 ))
                 item_menu.add(rumps.MenuItem(
-                    "Abrir / Editar",
-                    callback=lambda _, t=item: threading.Thread(
-                        target=self._show_history_item, args=(t,), daemon=True
+                    t("open_edit"),
+                    callback=lambda _, x=item: threading.Thread(
+                        target=self._show_history_item, args=(x,), daemon=True
                     ).start()
                 ))
                 history_menu.add(item_menu)
             history_menu.add(None)
             history_menu.add(rumps.MenuItem(
-                "Limpiar historial",
+                t("clear_history"),
                 callback=lambda _: self._clear_history()
             ))
         else:
-            history_menu.add(rumps.MenuItem("(vacío)"))
+            history_menu.add(rumps.MenuItem(t("empty")))
 
         # ── Submenú Diccionario personal ──────────────────────────────────────
         dictionary = self.config.get("dictionary", [])
-        dict_menu = rumps.MenuItem(f"📖 Diccionario ({len(dictionary)})")
+        dict_menu = rumps.MenuItem(f"{t('dictionary')} ({len(dictionary)})")
         for word in dictionary:
             word_item = rumps.MenuItem(word)
             word_item.add(rumps.MenuItem(
-                "Eliminar",
+                t("delete"),
                 callback=lambda _, w=word: self._remove_dictionary_word(w)
             ))
             dict_menu.add(word_item)
         if dictionary:
             dict_menu.add(None)
         dict_menu.add(rumps.MenuItem(
-            "Añadir palabra…",
+            t("add_word"),
             callback=lambda _: threading.Thread(
                 target=self._add_dictionary_word, daemon=True).start()
         ))
 
-        # ── Formato IA ────────────────────────────────────────────────────────
+        # ── Toggles ───────────────────────────────────────────────────────────
         ai_on = self.config.get("ai_format", False)
         ai_available = active_provider in ("groq", "openai")
-        ai_label = f"✨ Formato IA: {'Sí' if ai_on else 'No'}"
+        ai_label = f"{t('ai_format')}: {t('yes') if ai_on else t('no')}"
         if not ai_available:
-            ai_label += " (requiere Groq/OpenAI)"
+            ai_label += t("ai_requires")
         ai_item = rumps.MenuItem(
             ai_label,
             callback=self._toggle_ai_format if ai_available else None,
@@ -810,15 +928,17 @@ class WhisperDictationApp(rumps.App):
 
         updates_on = self.config.get("check_updates", True)
         updates_item = rumps.MenuItem(
-            f"🔔 Avisar de actualizaciones: {'Sí' if updates_on else 'No'}",
+            f"{t('updates')}: {t('yes') if updates_on else t('no')}",
             callback=self._toggle_check_updates,
         )
+        ui_lang_item = rumps.MenuItem(t("ui_lang"),
+                                      callback=self._toggle_ui_lang)
 
         # ── Menú principal ────────────────────────────────────────────────────
         update_items = []
         if getattr(self, "_update_available", None):
             update_items = [rumps.MenuItem(
-                f"⬆️ Nueva versión v{self._update_available} — descargar",
+                t("new_version").format(self._update_available),
                 callback=self._open_download_page)]
 
         self.menu.clear()
@@ -828,17 +948,18 @@ class WhisperDictationApp(rumps.App):
             None,
             provider_menu,
             lang_menu,
-            rumps.MenuItem(f"Tecla: {hotkey_name} (doble-toque)"),
+            rumps.MenuItem(t("hotkey_line").format(hotkey_name)),
             None,
             ai_item,
             dict_menu,
             updates_item,
+            ui_lang_item,
             None,
             history_menu,
             None,
-            rumps.MenuItem("⚙️ Configuración", callback=self._open_settings),
+            rumps.MenuItem(t("settings"), callback=self._open_settings),
             None,
-            rumps.MenuItem("Salir", callback=self._quit),
+            rumps.MenuItem(t("quit"), callback=self._quit),
         ]
 
     # ── Formato IA y diccionario ──────────────────────────────────────────────
@@ -856,9 +977,7 @@ class WhisperDictationApp(rumps.App):
         self._build_menu()
 
     def _add_dictionary_word(self):
-        word = dialog_input(
-            "Añade una palabra o nombre propio que Whisper suela "
-            "transcribir mal (p. ej. «Techbooster», «Vasyl»):").strip()
+        word = dialog_input(self._t("dlg_add_word")).strip()
         if not word:
             return
         with self.config_lock:
@@ -957,59 +1076,62 @@ class WhisperDictationApp(rumps.App):
 
     def _settings_thread(self):
         choice = dialog_choice(
-            "¿Qué quieres configurar?",
-            "Cancelar", "Tecla de activación", "APIs"
+            self._t("dlg_settings_what"),
+            self._t("cancel"), self._t("dlg_hotkey_option"), "APIs"
         )
         if choice == "APIs":
             self._settings_apis()
-        elif choice == "Tecla de activación":
+        elif choice == self._t("dlg_hotkey_option"):
             self._settings_hotkey()
 
     def _settings_apis(self):
         providers  = self.config["providers"]
         configured = [PROVIDERS[p]["name"] for p in providers if p in PROVIDERS]
 
+        t = self._t
         options = []
         if configured:
-            options.append("Gestionar existentes")
-        options.append("Añadir nueva API")
-        options.append("Cancelar")
+            options.append(t("dlg_manage"))
+        options.append(t("dlg_add_api"))
+        options.append(t("cancel"))
 
         choice = dialog_choice(
-            "APIs configuradas:\n" +
-            ("\n".join(f"• {n}" for n in configured) if configured else "(ninguna)") +
-            "\n\n¿Qué quieres hacer?",
+            t("dlg_apis_header") + "\n" +
+            ("\n".join(f"• {n}" for n in configured) if configured else t("dlg_none")) +
+            "\n\n" + t("dlg_what_do"),
             *reversed(options)
         )
-        if choice == "Añadir nueva API":
+        if choice == t("dlg_add_api"):
             self._setup_provider()
-        elif choice == "Gestionar existentes":
+        elif choice == t("dlg_manage"):
             self._manage_providers()
 
     def _manage_providers(self):
         providers = [p for p in self.config["providers"] if p in PROVIDERS]
         if not providers:
             return
+        t = self._t
         names  = [PROVIDERS[p]["name"] for p in providers]
-        choice = dialog_choice("Selecciona el proveedor a gestionar:", "Cancelar", *names)
-        if not choice or choice == "Cancelar":
+        choice = dialog_choice(t("dlg_select_manage"), t("cancel"), *names)
+        if not choice or choice == t("cancel"):
             return
         provider = next((p for p in providers if PROVIDERS[p]["name"] == choice), None)
         if not provider:
             return
 
-        active_mark = " (activo)" if provider == self.config["active_provider"] else ""
+        active_mark = t("dlg_active") if provider == self.config["active_provider"] else ""
         action = dialog_choice(
-            f"Proveedor: {choice}{active_mark}\n\n¿Qué quieres hacer?",
-            "Cancelar", "Eliminar", "Cambiar API key", "Usar este"
+            f"{t('provider')}: {choice}{active_mark}\n\n{t('dlg_what_do')}",
+            t("cancel"), t("delete"), t("dlg_change_key"), t("dlg_use_this")
         )
-        if action == "Usar este":
+        if action == t("dlg_use_this"):
             self._switch_provider(provider)
-        elif action == "Cambiar API key":
+        elif action == t("dlg_change_key"):
             self._setup_provider(edit=provider)
-        elif action == "Eliminar":
-            confirm = dialog_choice(f"¿Eliminar {choice}?", "Cancelar", "Eliminar")
-            if confirm == "Eliminar":
+        elif action == t("delete"):
+            confirm = dialog_choice(t("dlg_confirm_delete").format(choice),
+                                    t("cancel"), t("delete"))
+            if confirm == t("delete"):
                 del self.config["providers"][provider]
                 if self.config["active_provider"] == provider:
                     self.config["active_provider"] = (
@@ -1026,11 +1148,12 @@ class WhisperDictationApp(rumps.App):
         else:
             available = [p for p in PROVIDERS if p not in self.config["providers"]]
             if not available:
-                dialog_info("Ya tienes todos los proveedores configurados.")
+                dialog_info(self._t("dlg_all_configured"))
                 return
             names  = [PROVIDERS[p]["name"] for p in available]
-            choice = dialog_choice("Selecciona el proveedor de transcripción:", "Cancelar", *names)
-            if not choice or choice == "Cancelar":
+            choice = dialog_choice(self._t("dlg_select_provider"),
+                                   self._t("cancel"), *names)
+            if not choice or choice == self._t("cancel"):
                 if first_run and not self.config["providers"]:
                     sys.exit(0)
                 return
@@ -1041,7 +1164,7 @@ class WhisperDictationApp(rumps.App):
         info    = PROVIDERS[provider]
         current = self.config["providers"].get(provider, "")
         api_key = dialog_input(
-            f"API Key de {info['name']}\n({info['url']}):",
+            self._t("dlg_api_key").format(info["name"], info["url"]),
             default=current or info["placeholder"]
         )
         if not api_key or api_key == info["placeholder"]:
@@ -1057,9 +1180,10 @@ class WhisperDictationApp(rumps.App):
         self._dispatch(self._build_menu)
 
     def _settings_hotkey(self):
-        names  = [HOTKEY_NAMES[k] for k in HOTKEY_CHOICES]
-        choice = dialog_choice("Selecciona la tecla de activación:", "Cancelar", *names)
-        if not choice or choice == "Cancelar":
+        names  = [self._t("hotkeys")[k] for k in HOTKEY_CHOICES]
+        choice = dialog_choice(self._t("dlg_select_hotkey"),
+                               self._t("cancel"), *names)
+        if not choice or choice == self._t("cancel"):
             return
         self.config["hotkey"] = HOTKEY_CHOICES[names.index(choice)]
         save_config(self.config)
