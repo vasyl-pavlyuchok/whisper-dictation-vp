@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.1.1
+Diseñado por Vasyl Pavlyuchok & Claude — v3.1.2
 """
 
-APP_VERSION = "3.1.1"
+APP_VERSION = "3.1.2"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -32,13 +32,23 @@ PROVIDERS = {
 }
 
 LANGUAGES = {
-    "auto":  "Automático",
+    "auto":  "Automático (detecta el idioma)",
     "es":    "Español",
     "en":    "Inglés",
+    "uk":    "Ucraniano",
     "fr":    "Francés",
     "de":    "Alemán",
     "it":    "Italiano",
     "pt":    "Portugués",
+    "zh":    "Chino",
+    "ru":    "Ruso",
+    "ar":    "Árabe",
+    "hi":    "Hindi",
+    "ja":    "Japonés",
+    "ko":    "Coreano",
+    "tr":    "Turco",
+    "pl":    "Polaco",
+    "nl":    "Neerlandés",
 }
 
 HOTKEYS = {
@@ -65,7 +75,7 @@ def load_config():
             config = json.load(f)
     config.setdefault("providers", {})
     config.setdefault("active_provider", os.environ.get("WHISPER_PROVIDER", ""))
-    config.setdefault("language", "es")
+    config.setdefault("language", "auto")
     config.setdefault("hotkey", "alt_r")
     config.setdefault("history", [])
     config.setdefault("ai_format", False)

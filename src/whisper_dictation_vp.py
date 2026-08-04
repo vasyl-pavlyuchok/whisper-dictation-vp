@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.1.1
+Diseñado por Vasyl Pavlyuchok & Claude — v3.1.2
 """
 
-APP_VERSION = "3.1.1"
+APP_VERSION = "3.1.2"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -31,13 +31,23 @@ PROVIDERS = {
 }
 
 LANGUAGES = {
-    "auto":  "Automático",
+    "auto":  "Automático (detecta el idioma)",
     "es":    "Español",
     "en":    "Inglés",
+    "uk":    "Ucraniano",
     "fr":    "Francés",
     "de":    "Alemán",
     "it":    "Italiano",
     "pt":    "Portugués",
+    "zh":    "Chino",
+    "ru":    "Ruso",
+    "ar":    "Árabe",
+    "hi":    "Hindi",
+    "ja":    "Japonés",
+    "ko":    "Coreano",
+    "tr":    "Turco",
+    "pl":    "Polaco",
+    "nl":    "Neerlandés",
 }
 
 # Keycodes físicos de macOS por hotkey. Las claves legacy (cmd_l, ctrl_l,
@@ -258,7 +268,7 @@ def load_config():
             config = json.load(f)
     config.setdefault("providers", {})
     config.setdefault("active_provider", os.environ.get("WHISPER_PROVIDER", ""))
-    config.setdefault("language", "es")
+    config.setdefault("language", "auto")
     config.setdefault("hotkey", "alt_r")
     config.setdefault("history", [])
     config.setdefault("ai_format", False)
@@ -372,6 +382,21 @@ def dialog_info(msg):
 def play_sound(sound):
     subprocess.Popen(["afplay", f"/System/Library/Sounds/{sound}.aiff"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def set_clipboard(text):
+    """Copia al portapapeles vía NSPasteboard (inmune a problemas de locale;
+    pbcopy como fallback con entorno UTF-8 explícito)."""
+    try:
+        from AppKit import NSPasteboard, NSPasteboardTypeString
+        pb = NSPasteboard.generalPasteboard()
+        pb.clearContents()
+        pb.setString_forType_(text, NSPasteboardTypeString)
+        return
+    except Exception:
+        env = dict(os.environ)
+        env["LANG"] = "en_US.UTF-8"
+        subprocess.run(["pbcopy"], input=text.encode("utf-8"),
+                       env=env, check=True)
 
 # ── Transcripción ─────────────────────────────────────────────────────────────
 
@@ -759,7 +784,7 @@ class WhisperDictationApp(rumps.App):
     # ── Historial interactivo ─────────────────────────────────────────────────
 
     def _copy_history_item(self, text):
-        subprocess.run(["pbcopy"], input=text.encode("utf-8"))
+        set_clipboard(text)
         play_sound("Tink")
 
     def _show_history_item(self, text):
@@ -789,7 +814,7 @@ class WhisperDictationApp(rumps.App):
             return
 
         target = edited if edited else text
-        subprocess.run(["pbcopy"], input=target.encode("utf-8"))
+        set_clipboard(target)
         play_sound("Tink")
 
         # Actualizar historial si se editó el texto
@@ -1050,7 +1075,7 @@ class WhisperDictationApp(rumps.App):
                     save_config(self.config)
                 self._dispatch(self._build_menu)
 
-                subprocess.run(["pbcopy"], input=text.encode("utf-8"), check=True)
+                set_clipboard(text)
                 # Nuestro Cmd+V sintético no debe contar como toque del hotkey
                 self._suppress_until = time.time() + 1.0
                 subprocess.run(["osascript", "-e",

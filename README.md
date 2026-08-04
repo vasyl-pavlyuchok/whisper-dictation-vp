@@ -93,7 +93,7 @@ Solo necesitas **una** API key para empezar. **Recomendado: Groq** — es gratui
 - **Historial interactivo** — haz clic en cualquier transcripción para verla completa, copiarla o editarla
 - **4 proveedores de IA** — añade, cambia o elimina APIs desde el menú
 - **Últimas 10 transcripciones** guardadas en el historial
-- **Idioma configurable** — español, inglés, francés, alemán, italiano, portugués o automático
+- **Detección automática de idioma** — habla en el idioma que quieras y Whisper lo detecta; o fíjalo entre 16 idiomas (español, inglés, ucraniano, francés, alemán, italiano, portugués, chino, ruso, árabe, hindi, japonés, coreano, turco, polaco, neerlandés)
 - **Tecla de activación configurable** — Option derecho, Option izquierdo, Control o Command
 - **Detección de silencio** — no envía nada a la API si no hay voz
 - **Feedback sonoro** — Tink al iniciar, Pop al transcribir, Basso si hay un error
@@ -140,6 +140,11 @@ rm -f ~/.whisper_dictation_vp.json
 ---
 
 ## Changelog
+
+### v3.1.2
+- **Idioma automático por defecto** — Whisper detecta el idioma de cada dictado (español, inglés, ucraniano, italiano…); ya no hay que cambiarlo a mano
+- **17 idiomas en el menú** — añadidos ucraniano, chino, ruso, árabe, hindi, japonés, coreano, turco, polaco y neerlandés
+- **Portapapeles nativo (NSPasteboard)** — copia inmune a problemas de locale en cualquier entorno
 
 ### v3.1.1
 - **Fix del permiso de Accesibilidad huérfano** — al actualizar, la firma ad-hoc cambia y macOS ignoraba el permiso ya concedido (la casilla aparecía activada pero la tecla no respondía y el aviso salía en cada arranque); el instalador ahora resetea la entrada TCC para que el permiso se pida una sola vez, limpio
