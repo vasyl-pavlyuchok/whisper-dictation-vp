@@ -158,6 +158,13 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.4.0
+- **Iconos profesionales en el menú** — set Lucide monocromo (template: se adapta a modo claro/oscuro), adiós a los emojis
+- **Tooltips de ayuda** — al pasar el ratón por Formato IA, Diccionario, Idioma, etc., un tooltip explica qué hace cada función
+- **Submenú «Interfaz»** — elige el idioma de la app (Español/English) de una lista con marca, en vez del toggle ciego
+- **Detección automática por defecto también al actualizar** — migración única: quien prefiera un idioma fijo lo cambia una vez y se respeta
+- **Pantalla de instalación mejorada** — explica la API gratuita de Groq, lista los 16 idiomas + detección automática, y aclara que es un idioma por dictado
+
 ### v3.3.0
 - **Interfaz bilingüe (ES/EN)** — la app detecta el idioma del sistema y muestra menús y diálogos en español o inglés; conmutador «Interfaz» en el menú para cambiarlo al vuelo *(macOS; Windows en la próxima versión)*
 - **Instalador localizado** — el instalador de macOS se muestra en el idioma del sistema (recursos `.lproj`) y los avisos post-instalación son bilingües
@@ -217,4 +224,4 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Licencia
 
-MIT — consulta [LICENSE](LICENSE)
+MIT — consulta [LICENSE](LICENSE) · Iconos: [Lucide](https://lucide.dev) (ISC)

@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.3.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.4.0
 """
 
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.4.0"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -72,7 +72,14 @@ TR = {
         "dictionary": "Diccionario", "add_word": "Añadir palabra…",
         "delete": "Eliminar",
         "updates": "Avisar de actualizaciones",
-        "ui_lang": "Interfaz: Español",
+        "ui_menu": "Interfaz",
+        "tip_ai": "Un modelo de IA (gratuito con Groq) limpia la transcripción antes de pegarla: elimina muletillas («eh», «em»…), corrige puntuación y mayúsculas. No cambia el significado.",
+        "tip_dict": "Palabras que Whisper suele transcribir mal (nombres propios, marcas, tecnicismos). Se usan para guiar la transcripción y el Formato IA.",
+        "tip_updates": "Consulta GitHub una vez al día. Si hay versión nueva, aparece un aviso y una opción de descarga en este menú. Sin datos personales.",
+        "tip_ui": "Idioma de los menús y diálogos de la app (no afecta al idioma del dictado).",
+        "tip_language": "Idioma del dictado. En Automático, Whisper detecta el idioma de cada grabación (un idioma por dictado).",
+        "tip_hotkey": "Doble-toque para empezar a grabar; un toque para parar y pegar. Cámbiala en Configuración.",
+        "tip_history": "Tus últimas 10 transcripciones. Clic para copiar o editar.",
         "new_version": "Nueva versión v{} — descargar",
         "notif_title": "Nueva versión v{} disponible",
         "notif_body": "Descárgala desde el menú 🎙 de la barra.",
@@ -117,7 +124,14 @@ TR = {
         "dictionary": "Dictionary", "add_word": "Add word…",
         "delete": "Delete",
         "updates": "Notify about updates",
-        "ui_lang": "Interface: English",
+        "ui_menu": "Interface",
+        "tip_ai": "An AI model (free with Groq) cleans the transcript before pasting: removes filler words, fixes punctuation and casing. Meaning is never changed.",
+        "tip_dict": "Words Whisper tends to get wrong (proper nouns, brands, technical terms). Used to guide both transcription and AI Format.",
+        "tip_updates": "Checks GitHub once a day. If a new version exists, a notice and a download option appear in this menu. No personal data involved.",
+        "tip_ui": "Language of the app's menus and dialogs (does not affect dictation language).",
+        "tip_language": "Dictation language. On Automatic, Whisper detects the language of each recording (one language per dictation).",
+        "tip_hotkey": "Double-tap to start recording; single tap to stop and paste. Change it in Settings.",
+        "tip_history": "Your last 10 transcriptions. Click to copy or edit.",
         "new_version": "New version v{} — download",
         "notif_title": "New version v{} available",
         "notif_body": "Download it from the 🎙 menu bar icon.",
@@ -211,6 +225,36 @@ def fetch_latest_version():
                                  headers={"User-Agent": "WhisperDictationVP"})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.load(r).get("tag_name", "").lstrip("v") or None
+
+ICON_DIMENSIONS = (16, 16)
+
+def icon_path(name):
+    """PNG de Lucide empaquetado (o del repo en desarrollo)."""
+    candidates = []
+    base = getattr(sys, "_MEIPASS", None)
+    if base:
+        candidates.append(os.path.join(base, "icons", f"{name}.png"))
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates.append(os.path.join(here, "..", "app", "icons", f"{name}.png"))
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return None
+
+def mi(title, callback=None, icon=None, tooltip=None):
+    """MenuItem con icono template (Lucide) y tooltip opcionales."""
+    path = icon_path(icon) if icon else None
+    if path:
+        item = rumps.MenuItem(title, callback=callback, icon=path,
+                              dimensions=ICON_DIMENSIONS, template=True)
+    else:
+        item = rumps.MenuItem(title, callback=callback)
+    if tooltip:
+        try:
+            item._menuitem.setToolTip_(tooltip)
+        except Exception:
+            pass
+    return item
 
 def key_physically_down(vk):
     """Estado físico real de la tecla vía Quartz. None si no se puede saber."""
@@ -404,6 +448,13 @@ def load_config():
     config.setdefault("dictionary", [])
     config.setdefault("check_updates", True)
     config.setdefault("ui_lang", system_ui_lang())
+    # Migración única (v3.4): el modo Automático pasa a ser el predeterminado
+    # también para configs existentes — quien quiera un idioma fijo lo
+    # cambia una vez y no se vuelve a tocar
+    if not config.get("migr_auto_340"):
+        config["language"] = "auto"
+        config["migr_auto_340"] = True
+        save_config(config)
     if not config["providers"] and os.environ.get("GROQ_API_KEY"):
         config["providers"]["groq"] = os.environ.get("GROQ_API_KEY")
     if not config["providers"] and os.environ.get("WHISPER_API_KEY"):
@@ -832,10 +883,11 @@ class WhisperDictationApp(rumps.App):
         return LANGUAGES_I18N.get(self.config.get("ui_lang", "es"),
                                   LANGUAGES_I18N["es"])
 
-    def _toggle_ui_lang(self, _):
+    def _set_ui_lang(self, code):
+        if code == self.config.get("ui_lang"):
+            return
         with self.config_lock:
-            current = self.config.get("ui_lang", "es")
-            self.config["ui_lang"] = "en" if current == "es" else "es"
+            self.config["ui_lang"] = code
             save_config(self.config)
         self._build_menu()
 
@@ -850,7 +902,7 @@ class WhisperDictationApp(rumps.App):
         configured = list(self.config["providers"].keys())
         active_provider_name = PROVIDERS.get(active_provider, {}).get("name", active_provider)
         active_lang_name     = self._langs().get(active_lang, active_lang)
-        provider_menu = rumps.MenuItem(f"{t('provider')}: {active_provider_name}")
+        provider_menu = mi(f"{t('provider')}: {active_provider_name}", icon="cloud")
         for p in configured:
             name = PROVIDERS.get(p, {}).get("name", p)
             mark = "✓ " if p == active_provider else "    "
@@ -863,7 +915,8 @@ class WhisperDictationApp(rumps.App):
                 provider_menu.add(rumps.MenuItem(f"{mark}{name}"))
 
         # ── Submenú Idioma ────────────────────────────────────────────────────
-        lang_menu = rumps.MenuItem(f"{t('language')}: {active_lang_name}")
+        lang_menu = mi(f"{t('language')}: {active_lang_name}", icon="languages",
+                       tooltip=t("tip_language"))
         for key, name in self._langs().items():
             mark = "✓ " if key == active_lang else "    "
             lang_menu.add(rumps.MenuItem(
@@ -872,7 +925,7 @@ class WhisperDictationApp(rumps.App):
             ))
 
         # ── Submenú Historial ─────────────────────────────────────────────────
-        history_menu = rumps.MenuItem(t("history"))
+        history_menu = mi(t("history"), icon="history", tooltip=t("tip_history"))
         history = self.config.get("history", [])
         if history:
             for item in history:
@@ -899,7 +952,8 @@ class WhisperDictationApp(rumps.App):
 
         # ── Submenú Diccionario personal ──────────────────────────────────────
         dictionary = self.config.get("dictionary", [])
-        dict_menu = rumps.MenuItem(f"{t('dictionary')} ({len(dictionary)})")
+        dict_menu = mi(f"{t('dictionary')} ({len(dictionary)})", icon="book-open",
+                       tooltip=t("tip_dict"))
         for word in dictionary:
             word_item = rumps.MenuItem(word)
             word_item.add(rumps.MenuItem(
@@ -921,25 +975,31 @@ class WhisperDictationApp(rumps.App):
         ai_label = f"{t('ai_format')}: {t('yes') if ai_on else t('no')}"
         if not ai_available:
             ai_label += t("ai_requires")
-        ai_item = rumps.MenuItem(
-            ai_label,
-            callback=self._toggle_ai_format if ai_available else None,
-        )
+        ai_item = mi(ai_label,
+                     callback=self._toggle_ai_format if ai_available else None,
+                     icon="sparkles", tooltip=t("tip_ai"))
 
         updates_on = self.config.get("check_updates", True)
-        updates_item = rumps.MenuItem(
+        updates_item = mi(
             f"{t('updates')}: {t('yes') if updates_on else t('no')}",
             callback=self._toggle_check_updates,
-        )
-        ui_lang_item = rumps.MenuItem(t("ui_lang"),
-                                      callback=self._toggle_ui_lang)
+            icon="bell", tooltip=t("tip_updates"))
+
+        # Submenú Interfaz: idiomas de la UI con marca en el activo
+        ui_lang_item = mi(t("ui_menu"), icon="globe", tooltip=t("tip_ui"))
+        active_ui = self.config.get("ui_lang", "es")
+        for code, label in (("es", "Español"), ("en", "English")):
+            mark = "✓ " if code == active_ui else "    "
+            ui_lang_item.add(rumps.MenuItem(
+                f"{mark}{label}",
+                callback=lambda _, c=code: self._set_ui_lang(c)))
 
         # ── Menú principal ────────────────────────────────────────────────────
         update_items = []
         if getattr(self, "_update_available", None):
-            update_items = [rumps.MenuItem(
+            update_items = [mi(
                 t("new_version").format(self._update_available),
-                callback=self._open_download_page)]
+                callback=self._open_download_page, icon="download")]
 
         self.menu.clear()
         self.menu = [
@@ -948,7 +1008,8 @@ class WhisperDictationApp(rumps.App):
             None,
             provider_menu,
             lang_menu,
-            rumps.MenuItem(t("hotkey_line").format(hotkey_name)),
+            mi(t("hotkey_line").format(hotkey_name), icon="keyboard",
+               tooltip=t("tip_hotkey")),
             None,
             ai_item,
             dict_menu,
@@ -957,9 +1018,9 @@ class WhisperDictationApp(rumps.App):
             None,
             history_menu,
             None,
-            rumps.MenuItem(t("settings"), callback=self._open_settings),
+            mi(t("settings"), callback=self._open_settings, icon="settings"),
             None,
-            rumps.MenuItem(t("quit"), callback=self._quit),
+            mi(t("quit"), callback=self._quit, icon="power"),
         ]
 
     # ── Formato IA y diccionario ──────────────────────────────────────────────

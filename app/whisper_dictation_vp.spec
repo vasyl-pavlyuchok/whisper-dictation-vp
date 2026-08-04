@@ -4,14 +4,14 @@
 
 import os
 
-APP_VERSION = "3.3.0"
+APP_VERSION = "3.4.0"
 repo_dir = os.path.dirname(os.path.abspath(SPECPATH))
 
 a = Analysis(
     [os.path.join(repo_dir, "src", "whisper_dictation_vp.py")],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[(os.path.join(repo_dir, "app", "icons"), "icons")],
     hiddenimports=[
         "groq", "openai", "deepgram", "assemblyai",
         "dotenv", "rumps", "pynput", "sounddevice",
