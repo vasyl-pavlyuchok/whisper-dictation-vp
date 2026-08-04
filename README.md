@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/vasyl-pavlyuchok/whisper-dictation-vp?label=versi%C3%B3n&color=84cc16)](../../releases/latest)
 [![Licencia](https://img.shields.io/badge/licencia-MIT-blue)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-black?logo=apple)](../../releases/latest)
-[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20(beta)-0078d4?logo=windows)](../../releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows)](../../releases/latest)
 
 **Dicta en vez de escribir, en cualquier app.** Doble-toque una tecla, habla, toque simple — y el texto aparece donde estabas escribiendo. Gratis y de código abierto: funciona con la **API gratuita de Groq** (whisper-large-v3) — meses de uso diario sin tocar un solo límite. Sin suscripción: lo que cuesta un Wispr Flow, te lo ahorras cada mes.
 
@@ -31,7 +31,7 @@ Ve a la página de [**Releases**](../../releases/latest) y descarga la versión 
 |---------|---------|
 | **macOS Apple Silicon** (M1/M2/M3/M4) | `WhisperDictationVP-AppleSilicon.pkg` |
 | **macOS Intel** | `WhisperDictationVP-Intel.pkg` |
-| **Windows 10/11** (beta) | `WhisperDictationVP-Windows.zip` |
+| **Windows 10/11** | `WhisperDictationVP-Windows-Setup.exe` (instalador) o `.zip` (portable) |
 
 > **Novedad v3.0** — La app de macOS ahora es **100% nativa**: lleva Python embebido, así que ya **no necesitas tener Python instalado ni se abre ninguna ventana de Terminal**. Solo instalar y dictar.
 
@@ -92,7 +92,7 @@ Solo necesitas **una** API key para empezar. **Recomendado: Groq** — es gratui
 
 ---
 
-## Instalación en Windows (beta)
+## Instalación en Windows
 
 1. Descarga **`WhisperDictationVP-Windows-Setup.exe`** desde [Releases](../../releases/latest) *(o el `.zip` si prefieres la versión portable)*
 2. **SmartScreen mostrará un aviso azul** («Windows protegió su PC») porque la app no está firmada — los certificados de firma cuestan 200–400 €/año y esta app es gratuita y open source: pulsa **«Más información» → «Ejecutar de todas formas»**. Solo lo pide la primera vez.
@@ -160,6 +160,10 @@ rm -f ~/.whisper_dictation_vp.json
 ---
 
 ## Changelog
+
+### v3.6.2
+- **La versión de Windows sale de beta** — validada en hardware real (portátil con Windows 11): tecla, indicador visual, sonidos, micrófono, portapapeles y gestión de Bluetooth verificados uno a uno; su comportamiento con auriculares Bluetooth es equivalente al de las apps comerciales de dictado
+- Documentación y página de descargas actualizadas: el instalador pasa a ser la opción recomendada en Windows
 
 ### v3.6.1 (macOS y Windows)
 - **El micrófono se libera de verdad al terminar el dictado** — en la v3.6.0 el cierre no llegaba a ejecutarse en Windows y, además, PortAudio mantenía el dispositivo reservado aunque se cerrara el stream: los auriculares Bluetooth se quedaban en modo manos-libres (mono) y la música seguía sonando mal. Ahora se cierra el stream y se reinicia PortAudio, devolviendo los auriculares a alta calidad (A2DP)

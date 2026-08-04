@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/vasyl-pavlyuchok/whisper-dictation-vp?label=version&color=84cc16)](../../releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-Intel%20%7C%20Apple%20Silicon-black?logo=apple)](../../releases/latest)
-[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011%20(beta)-0078d4?logo=windows)](../../releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?logo=windows)](../../releases/latest)
 
 **Dictate instead of typing, into any app.** Double-tap a key, speak, single tap — and the text appears right where you were writing. Free and open source: it runs on **Groq's free API** (whisper-large-v3) — months of daily use without ever hitting a limit. No subscription: what a Wispr Flow costs, you save every month.
 
@@ -31,7 +31,7 @@ Go to the [**Releases**](../../releases/latest) page and download the version fo
 |--------|------|
 | **macOS Apple Silicon** (M1/M2/M3/M4) | `WhisperDictationVP-AppleSilicon.pkg` |
 | **macOS Intel** | `WhisperDictationVP-Intel.pkg` |
-| **Windows 10/11** (beta) | `WhisperDictationVP-Windows.zip` |
+| **Windows 10/11** | `WhisperDictationVP-Windows-Setup.exe` (installer) or `.zip` (portable) |
 
 > **v3.0+** — The macOS app is **100% native**: Python is embedded, so you **don't need Python installed and no Terminal window ever opens**. Just install and dictate.
 
@@ -89,7 +89,7 @@ You only need **one** API key to get started. **Recommended: Groq** — free, bl
 
 ---
 
-## Windows installation (beta)
+## Windows installation
 
 1. Download **`WhisperDictationVP-Windows-Setup.exe`** from [Releases](../../releases/latest) *(or the `.zip` for the portable version)*
 2. **SmartScreen will show a blue warning** ("Windows protected your PC") because the app is unsigned — code signing certificates cost €200–400/year and this app is free and open source: click **"More info" → "Run anyway"**. Only asked once.
@@ -150,6 +150,8 @@ rm -f ~/.whisper_dictation_vp.json
 
 See the full changelog (in Spanish) in [README.md](README.md#changelog). Highlights:
 
+- **v3.6.2** — Windows version out of beta: validated on real hardware (hotkey, visual indicator, sounds, microphone, clipboard and Bluetooth handling verified one by one)
+- **v3.6.x** — the microphone is only opened while dictating, so Bluetooth headphones stay in high quality the rest of the time
 - **v3.5.2** (Windows only) — dictation no longer wipes your clipboard (it is saved and restored around the paste); fixed 64-bit `ctypes` clipboard calls that truncated pointers; single-instance mutex so two copies can't both listen, record and paste; no more audio dropouts when stopping a recording
 - **v3.2.0** — update notifications with opt-out toggle; dual hotkey listening channel (native NSEvent monitor + pynput)
 - **v3.1.x** — AI Format (LLM cleanup), personal dictionary, automatic language detection with 17 language options, native clipboard, critical hotkey fixes
