@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.1.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.1.1
 """
 
-APP_VERSION = "3.1.0"
+APP_VERSION = "3.1.1"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -234,6 +234,19 @@ def check_accessibility(prompt=True):
             {kAXTrustedCheckOptionPrompt: prompt}))
     except Exception:
         return True  # Si no se puede comprobar, seguimos sin bloquear la app
+
+
+def acquire_single_instance_lock():
+    """Garantiza una sola instancia (el instalador y el LaunchAgent pueden
+    lanzar la app casi a la vez). Devuelve el fichero de lock o None."""
+    import fcntl
+    lock_path = os.path.expanduser("~/.whisper_dictation_vp.lock")
+    try:
+        f = open(lock_path, "w")
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return f
+    except OSError:
+        return None
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -498,16 +511,19 @@ class WhisperDictationApp(rumps.App):
         )
         self.stream.start()
 
-        # Pedir permiso de Accesibilidad (macOS muestra el diálogo del sistema
-        # y añade la app a la lista automáticamente)
-        if not check_accessibility(prompt=True):
-            threading.Thread(target=dialog_info, args=(
-                "Whisper Dictation VP necesita el permiso de Accesibilidad "
-                "para detectar la tecla de dictado y pegar el texto.\n\n"
-                "1. Abre Ajustes del Sistema → Privacidad y seguridad → Accesibilidad\n"
-                "2. Activa «Whisper Dictation VP»\n"
-                "3. Sal de la app (icono 🎙 → Salir) y vuelve a abrirla",
-            ), daemon=True).start()
+        # Permiso de Accesibilidad: comprobación SILENCIOSA primero. Solo si
+        # falta, pedimos con el diálogo del sistema — y únicamente una vez por
+        # versión, para no ser pesados en cada arranque.
+        if not check_accessibility(prompt=False):
+            dbg("accesibilidad NO concedida")
+            if self.config.get("ax_prompted_version") != APP_VERSION:
+                with self.config_lock:
+                    self.config["ax_prompted_version"] = APP_VERSION
+                    save_config(self.config)
+                check_accessibility(prompt=True)
+                threading.Thread(target=self._ax_help_dialog, daemon=True).start()
+        else:
+            dbg("accesibilidad OK")
 
         self._listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release)
@@ -515,6 +531,54 @@ class WhisperDictationApp(rumps.App):
         self._listener.start()
         dbg(f"app v{APP_VERSION} iniciada — hotkey={self.config.get('hotkey')} "
             f"(vk={self._current_hotkey_vk()}) proveedor={self.provider}")
+
+        if os.path.exists(os.path.expanduser("~/.wdvp_selftest")):
+            threading.Thread(target=self._selftest, daemon=True).start()
+
+    def _selftest(self):
+        """Diagnóstico: postea toques sintéticos del hotkey y deja en el log
+        si el listener los recibe (llegan con injected=True y no disparan
+        acciones). Se activa creando el fichero ~/.wdvp_selftest."""
+        try:
+            os.unlink(os.path.expanduser("~/.wdvp_selftest"))
+        except OSError:
+            pass
+        time.sleep(4)
+        try:
+            import Quartz
+            vk = self._current_hotkey_vk()
+            masks = {55: Quartz.kCGEventFlagMaskCommand,
+                     54: Quartz.kCGEventFlagMaskCommand,
+                     58: Quartz.kCGEventFlagMaskAlternate,
+                     61: Quartz.kCGEventFlagMaskAlternate,
+                     59: Quartz.kCGEventFlagMaskControl,
+                     62: Quartz.kCGEventFlagMaskControl}
+            dbg(f"SELFTEST: posteando 2 toques sintéticos de vk={vk}")
+            for _ in range(2):
+                for down in (True, False):
+                    ev = Quartz.CGEventCreateKeyboardEvent(None, vk, down)
+                    Quartz.CGEventSetType(ev, Quartz.kCGEventFlagsChanged)
+                    Quartz.CGEventSetFlags(ev, masks.get(vk, 0) if down else 0)
+                    Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
+                    time.sleep(0.08)
+                time.sleep(0.15)
+            dbg("SELFTEST: enviados — si arriba hay eventos injected=True, "
+                "el listener funciona")
+        except Exception as e:
+            dbg(f"SELFTEST error: {e}")
+
+    def _ax_help_dialog(self):
+        choice = dialog_choice(
+            "Whisper Dictation VP necesita el permiso de Accesibilidad para "
+            "detectar la tecla de dictado y pegar el texto.\n\n"
+            "En el aviso de macOS pulsa «Abrir Ajustes del Sistema» y activa "
+            "«Whisper Dictation VP».\n\n"
+            "Después sal de la app (icono 🎙 → Salir) y vuelve a abrirla.",
+            "Abrir Ajustes", "OK")
+        if choice == "Abrir Ajustes":
+            subprocess.Popen(["open",
+                "x-apple.systempreferences:com.apple.preference.security"
+                "?Privacy_Accessibility"])
 
     # ── UI dispatch ───────────────────────────────────────────────────────────
 
@@ -1020,4 +1084,8 @@ class WhisperDictationApp(rumps.App):
 
 
 if __name__ == "__main__":
+    _instance_lock = acquire_single_instance_lock()
+    if _instance_lock is None:
+        dbg("instancia duplicada — saliendo")
+        sys.exit(0)
     WhisperDictationApp().run()

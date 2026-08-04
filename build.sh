@@ -7,7 +7,7 @@ set -e
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$(mktemp -d)"
 PKG_ROOT="$BUILD_DIR/pkg_root"
-VERSION="3.1.0"
+VERSION="3.1.1"
 ARCH="$(uname -m)"
 case "$ARCH" in
   arm64)  ARCH_LABEL="AppleSilicon" ;;
@@ -56,6 +56,19 @@ echo "==> Compilando Whisper Dictation VP.app (PyInstaller)..."
 
 APP_SRC="$BUILD_DIR/dist/Whisper Dictation VP.app"
 [ -d "$APP_SRC" ] || { echo "✗ PyInstaller no generó el .app"; exit 1; }
+
+# ── 3b. Firma estable (si existe el certificado local) ────────────────────────
+# Con una identidad de firma constante, macOS conserva el permiso de
+# Accesibilidad entre versiones y no hay que reconcederlo en cada update.
+SIGN_ID="Whisper Dictation VP Signing"
+if security find-identity -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
+  echo "==> Firmando con identidad estable: $SIGN_ID"
+  codesign --force --deep --sign "$SIGN_ID" "$APP_SRC" 2>/dev/null || \
+    echo "    [aviso] fallo al firmar — se mantiene la firma ad-hoc"
+else
+  echo "    [aviso] sin certificado local — firma ad-hoc (el permiso de"
+  echo "    Accesibilidad habrá que reconcederlo tras cada actualización)"
+fi
 
 # ── 4. Montar la raíz del paquete ─────────────────────────────────────────────
 mkdir -p "$PKG_ROOT/Applications"

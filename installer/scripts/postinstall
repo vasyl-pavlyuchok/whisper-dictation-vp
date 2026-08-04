@@ -15,9 +15,21 @@ dialog_ok() {
   end tell" 2>/dev/null || true
 }
 
-# ── 1. Limpiar instalaciones antiguas (v2.x usaba Python del sistema) ────────
+# ── 1. Cerrar instancias en ejecución y limpiar instalaciones antiguas ───────
 pkill -f "whisper_dictation_vp.py" 2>/dev/null || true
+pkill -f "Whisper Dictation VP.app/Contents/MacOS" 2>/dev/null || true
 rm -rf /usr/local/lib/whisper_dictation_vp 2>/dev/null || true
+sleep 1
+
+# ── 1b. Resetear el permiso de Accesibilidad si la firma es ad-hoc ───────────
+# Con firma ad-hoc, cada build tiene identidad distinta y el permiso de la
+# versión anterior queda "huérfano": la casilla aparece activada pero macOS
+# ignora al binario nuevo (la tecla no responde y el aviso sale en cada
+# arranque). Al resetear, macOS pide el permiso UNA vez, limpio, y funciona.
+# Con firma estable (certificado local) el permiso se conserva y NO se resetea.
+if codesign -dv "/Applications/Whisper Dictation VP.app" 2>&1 | grep -q "adhoc"; then
+  tccutil reset Accessibility com.vasyl.whisper-dictation-vp 2>/dev/null || true
+fi
 
 # ── 2. Crear LaunchAgent (auto-inicio al login) ──────────────────────────────
 mkdir -p "$USER_HOME/Library/LaunchAgents"
@@ -49,25 +61,16 @@ as_user launchctl load "$PLIST" 2>/dev/null || true
 
 # ── 4. Instrucciones de Accesibilidad ────────────────────────────────────────
 dialog_ok \
-"✅ Whisper Dictation VP 3.1.0 instalado correctamente.
+"✅ Whisper Dictation VP 3.1.1 instalada correctamente.
 
-Ahora es una app 100% nativa: ya no necesita Python ni ninguna ventana de Terminal.
+ÚLTIMO PASO — al abrirse la app, macOS pedirá el permiso de Accesibilidad:
 
-PASO OBLIGATORIO — Permiso de Accesibilidad:
-
-Al abrir la app, macOS te pedirá el permiso automáticamente. Si no aparece:
-
-1. Abre: Ajustes del Sistema → Privacidad y seguridad → Accesibilidad
-
-2. Activa la casilla de «Whisper Dictation VP»
-
+1. Pulsa «Abrir Ajustes del Sistema» en el aviso
+2. Activa la casilla «Whisper Dictation VP»
 3. Sal de la app (icono 🎙 → Salir) y vuelve a abrirla
 
-Si venías de una versión anterior, puedes desmarcar «Terminal» de esa lista: ya no hace falta.
-
-Tecla predeterminada: Option derecho
-(doble-toque para iniciar, toque simple para detener)" \
-"Whisper Dictation VP instalado" "note"
+Este paso se pide en cada actualización porque la firma de la app cambia; es normal y solo hay que hacerlo una vez por versión." \
+"Whisper Dictation VP instalada" "note"
 
 # ── 5. Lanzar la app al finalizar ────────────────────────────────────────────
 as_user open -a "Whisper Dictation VP" 2>/dev/null || true

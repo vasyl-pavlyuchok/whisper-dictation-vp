@@ -2,7 +2,7 @@
 
 Dictado por voz para macOS y Windows usando inteligencia artificial. Doble-toque **Option derecho** para iniciar la grabación, toque simple para detener — el texto aparece pegado automáticamente en cualquier app.
 
-Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.1.0
+Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.1.1
 
 ---
 
@@ -117,7 +117,7 @@ El archivo de configuración se guarda en `~/.whisper_dictation_vp.json`. Para r
 ./build.sh
 ```
 
-Genera `WhisperDictationVP v3.0.0.pkg` en el Escritorio, con la app y su Python embebido vía PyInstaller.
+Genera `WhisperDictationVP-<Arquitectura>.pkg` en el Escritorio, con la app y su Python embebido vía PyInstaller. Si el llavero contiene la identidad `Whisper Dictation VP Signing`, la app se firma con ella (permiso de Accesibilidad estable entre versiones); si no, firma ad-hoc.
 
 **Releases automáticas** — al subir un tag `v*`, GitHub Actions compila las tres versiones (macOS arm64, macOS x86_64 y Windows) y las publica en Releases.
 
@@ -141,7 +141,11 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
-### v3.1.0
+### v3.1.1
+- **Fix del permiso de Accesibilidad huérfano** — al actualizar, la firma ad-hoc cambia y macOS ignoraba el permiso ya concedido (la casilla aparecía activada pero la tecla no respondía y el aviso salía en cada arranque); el instalador ahora resetea la entrada TCC para que el permiso se pida una sola vez, limpio
+- **Instancia única** — el instalador y el auto-arranque ya no pueden abrir la app dos veces (adiós diálogos duplicados)
+- **Aviso de permiso una sola vez por versión** — nada de prompts repetidos en cada arranque
+- **Firma estable opcional** — si existe el certificado local `Whisper Dictation VP Signing`, la app se firma con identidad constante y el permiso de Accesibilidad sobrevive a las actualizaciones
 - **✨ Formato IA** — post-procesado opcional con LLM (Groq llama-3.3 gratuito u OpenAI): elimina muletillas y corrige puntuación sin cambiar el significado
 - **📖 Diccionario personal** — palabras que Whisper transcribe mal (nombres, marcas, tecnicismos) se corrigen automáticamente
 - **Fix crítico del hotkey** — en la app empaquetada los modificadores (Cmd, Ctrl) podían llegar como «release» sin «press» y la grabación no se podía detener; el nuevo motor consulta el estado físico real de la tecla vía Quartz y es inmune a este fallo
