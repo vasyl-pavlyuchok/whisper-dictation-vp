@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.5.3
+Diseñado por Vasyl Pavlyuchok & Claude — v3.6.0
 """
 
-APP_VERSION = "3.5.3"
+APP_VERSION = "3.6.0"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -712,11 +712,10 @@ class WhisperDictationApp(rumps.App):
         self._build_client()
         self._build_menu()
 
-        self.stream = sd.InputStream(
-            samplerate=SAMPLE_RATE, channels=CHANNELS,
-            dtype=DTYPE, callback=self._audio_callback, blocksize=1024,
-        )
-        self.stream.start()
+        # El micrófono se abre SOLO durante la grabación: con auriculares
+        # Bluetooth, mantenerlo abierto fuerza el perfil manos-libres (mono,
+        # baja calidad) y degrada la música que estés escuchando.
+        self.stream = None
 
         # Permiso de Accesibilidad: comprobación SILENCIOSA primero. Solo si
         # falta, pedimos con el diálogo del sistema — y únicamente una vez por
@@ -1252,6 +1251,30 @@ class WhisperDictationApp(rumps.App):
 
     # ── Audio ─────────────────────────────────────────────────────────────────
 
+    def _close_stream(self):
+        if getattr(self, "stream", None) is not None:
+            try:
+                self.stream.stop(); self.stream.close()
+                dbg("micrófono liberado")
+            except Exception as e:
+                dbg(f"error cerrando el micrófono: {e}")
+            self.stream = None
+
+    def _open_stream(self):
+        """Abre el micrófono para grabar. Devuelve True si lo consigue."""
+        self._close_stream()
+        try:
+            self.stream = sd.InputStream(
+                samplerate=SAMPLE_RATE, channels=CHANNELS,
+                dtype=DTYPE, callback=self._audio_callback, blocksize=1024,
+            )
+            self.stream.start()
+            dbg("micrófono abierto para grabar")
+            return True
+        except Exception as e:
+            dbg(f"ERROR abriendo el micrófono: {e}")
+            return False
+
     def _audio_callback(self, indata, frames, time_info, status):
         with self.lock:
             if self.recording:
@@ -1310,6 +1333,7 @@ class WhisperDictationApp(rumps.App):
                 frames              = list(self.audio_frames)
                 self._last_tap_time = 0.0
                 dbg("tap: STOP grabación")
+                self._close_stream()
                 self._dispatch(self._set_title, ICON_PROCESSING)
                 threading.Thread(target=self._process, args=(frames,),
                                  daemon=True).start()
@@ -1318,8 +1342,12 @@ class WhisperDictationApp(rumps.App):
         if now - self._last_tap_time <= DOUBLE_TAP_WINDOW:
             self._last_tap_time = 0.0
             with self.lock:
-                self.recording = True
                 self.audio_frames.clear()
+            if not self._open_stream():
+                play_sound("Basso")
+                return
+            with self.lock:
+                self.recording = True
             dbg("doble tap: START grabación")
             play_sound("Tink")
             self._dispatch(self._set_title, ICON_RECORDING)
@@ -1409,8 +1437,7 @@ class WhisperDictationApp(rumps.App):
                 NSEvent.removeMonitor_(self._ns_monitor)
         except Exception:
             pass
-        self.stream.stop()
-        self.stream.close()
+        self._close_stream()
         rumps.quit_application()
 
 

@@ -67,7 +67,7 @@ as_user launchctl load "$PLIST" 2>/dev/null || true
 # ── 4. Instrucciones de Accesibilidad (bilingüe) ─────────────────────────────
 if [ "$USER_LANG" = "es" ]; then
 dialog_ok \
-"✅ Whisper Dictation VP 3.5.3 instalada correctamente.
+"✅ Whisper Dictation VP 3.6.0 instalada correctamente.
 
 ÚLTIMO PASO — al abrirse la app, macOS pedirá el permiso de Accesibilidad:
 
@@ -79,7 +79,7 @@ Este paso se pide en cada actualización porque la firma de la app cambia; es no
 "Whisper Dictation VP instalada" "note"
 else
 dialog_ok \
-"✅ Whisper Dictation VP 3.5.3 installed successfully.
+"✅ Whisper Dictation VP 3.6.0 installed successfully.
 
 LAST STEP — when the app opens, macOS will ask for the Accessibility permission:
 

@@ -161,6 +161,10 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.6.0 (macOS y Windows)
+- **El micrófono solo se abre mientras grabas** — antes permanecía abierto todo el tiempo, lo que con auriculares Bluetooth forzaba el perfil manos-libres (mono, baja calidad) y degradaba la música que estuvieras escuchando. Ahora se abre al empezar el dictado y se libera al terminar: tus auriculares se quedan en alta calidad salvo esos segundos
+- Si el micrófono no se puede abrir, la grabación se cancela con aviso sonoro en vez de grabar en vacío
+
 ### v3.5.3 (solo Windows)
 - Consolida los arreglos de la v3.5.2 en una release verificada (el tag anterior apuntaba a un commit intermedio)
 

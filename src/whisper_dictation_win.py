@@ -3,10 +3,10 @@
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque en la tecla configurada (Alt izquierdo por defecto) para iniciar
 grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.5.3
+Diseñado por Vasyl Pavlyuchok & Claude — v3.6.0
 """
 
-APP_VERSION = "3.5.3"
+APP_VERSION = "3.6.0"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -553,7 +553,7 @@ class WhisperDictationWin:
 
         self.overlay = StatusOverlay()
         self.stream = None
-        self._open_stream()
+        self._log_input_device()
 
         self._listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release)
@@ -599,28 +599,41 @@ class WhisperDictationWin:
         dbg(f"micrófono guardado no encontrado: {wanted} — uso el predeterminado")
         return None
 
-    def _open_stream(self):
-        if self.stream is not None:
-            try:
-                self.stream.stop(); self.stream.close()
-            except Exception:
-                pass
-            self.stream = None
-        device = self._resolve_device()
+    def _log_input_device(self):
         try:
+            device = self._resolve_device()
             info = sd.query_devices(device if device is not None else None,
                                     kind="input")
             dbg(f"micrófono de entrada: {info.get('name')} "
                 f"(canales: {info.get('max_input_channels')})")
         except Exception as e:
             dbg(f"sin dispositivo de entrada: {e}")
+
+    def _close_stream(self):
+        """Cierra el micrófono. IMPORTANTE con auriculares Bluetooth: mientras
+        el micro está abierto, Windows fuerza el perfil manos-libres (mono,
+        baja calidad) y la música suena mal. Cerrándolo al terminar cada
+        dictado, los auriculares vuelven a alta calidad (A2DP)."""
+        if self.stream is not None:
+            try:
+                self.stream.stop(); self.stream.close()
+                dbg("micrófono liberado")
+            except Exception as e:
+                dbg(f"error cerrando el micrófono: {e}")
+            self.stream = None
+
+    def _open_stream(self):
+        """Abre el micrófono SOLO durante la grabación (ver _close_stream)."""
+        self._close_stream()
+        device = self._resolve_device()
         try:
             self.stream = sd.InputStream(
                 samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=DTYPE,
                 device=device, callback=self._audio_callback, blocksize=1024,
             )
             self.stream.start()
-            dbg("stream de audio iniciado")
+            dbg("micrófono abierto para grabar")
+            return True
         except Exception as e:
             dbg(f"ERROR abriendo el micrófono: {e}")
             dialog_info(
@@ -628,6 +641,7 @@ class WhisperDictationWin:
                 "Comprueba: Configuración → Privacidad y seguridad → "
                 "Micrófono → activa «Permitir que las aplicaciones de "
                 "escritorio accedan al micrófono».")
+            return False
 
     def _make_mic_action(self, name):
         def action(icon, item):
@@ -635,7 +649,7 @@ class WhisperDictationWin:
                 self.config["input_device"] = name
                 save_config(self.config)
             dbg(f"micrófono cambiado a: {name or '(predeterminado)'}")
-            self._open_stream()
+            self._log_input_device()
         return action
 
     def _update_check_loop(self):
@@ -951,8 +965,13 @@ class WhisperDictationWin:
         if now - self._last_tap_time <= DOUBLE_TAP_WINDOW:
             self._last_tap_time = 0.0
             with self.lock:
-                self.recording = True
                 self.audio_frames.clear()
+            if not self._open_stream():
+                dbg("no se pudo abrir el micrófono — grabación cancelada")
+                play_sound("error")
+                return
+            with self.lock:
+                self.recording = True
             play_sound("start")
             dbg("grabación iniciada")
             self._set_state("recording")
@@ -1042,11 +1061,7 @@ class WhisperDictationWin:
             self._listener.stop()
         except Exception:
             pass
-        try:
-            self.stream.stop()
-            self.stream.close()
-        except Exception:
-            pass
+        self._close_stream()
         icon.stop()
 
     def run(self):

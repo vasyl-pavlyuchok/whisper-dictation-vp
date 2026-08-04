@@ -7,7 +7,7 @@ set -e
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$(mktemp -d)"
 PKG_ROOT="$BUILD_DIR/pkg_root"
-VERSION="3.5.3"
+VERSION="3.6.0"
 ARCH="$(uname -m)"
 case "$ARCH" in
   arm64)  ARCH_LABEL="AppleSilicon" ;;
