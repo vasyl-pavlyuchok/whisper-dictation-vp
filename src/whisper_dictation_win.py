@@ -1,0 +1,558 @@
+#!/usr/bin/env python3
+"""
+Whisper Dictation VP — Dictado por voz para Windows (beta).
+Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
+Diseñado por Vasyl Pavlyuchok & Claude — v3.0.0
+"""
+
+APP_VERSION = "3.0.0"
+
+import os, sys, tempfile, threading, json, wave, time
+import numpy as np
+import sounddevice as sd
+from pynput import keyboard
+from pynput.keyboard import Controller as KeyboardController, Key
+from PIL import Image, ImageDraw
+import pystray
+from dotenv import load_dotenv
+load_dotenv()
+
+CONFIG_FILE       = os.path.expanduser("~/.whisper_dictation_vp.json")
+HISTORY_MAX       = 10
+SAMPLE_RATE       = 16000
+CHANNELS          = 1
+DTYPE             = "int16"
+DOUBLE_TAP_WINDOW = 0.4
+
+PROVIDERS = {
+    "groq":       {"name": "Groq (gratis)",  "url": "console.groq.com",       "placeholder": "gsk_..."},
+    "openai":     {"name": "OpenAI",          "url": "platform.openai.com",    "placeholder": "sk-..."},
+    "deepgram":   {"name": "Deepgram",        "url": "console.deepgram.com",   "placeholder": "..."},
+    "assemblyai": {"name": "AssemblyAI",      "url": "app.assemblyai.com",     "placeholder": "..."},
+}
+
+LANGUAGES = {
+    "auto":  "Automático",
+    "es":    "Español",
+    "en":    "Inglés",
+    "fr":    "Francés",
+    "de":    "Alemán",
+    "it":    "Italiano",
+    "pt":    "Portugués",
+}
+
+HOTKEYS = {
+    "alt_r":   keyboard.Key.alt_r,
+    "alt_gr":  keyboard.Key.alt_gr,
+    "alt":     keyboard.Key.alt_l,
+    "ctrl_r":  keyboard.Key.ctrl_r,
+    "ctrl_l":  keyboard.Key.ctrl_l,
+}
+HOTKEY_NAMES = {
+    "alt_r":   "Alt derecho",
+    "alt_gr":  "AltGr",
+    "alt":     "Alt izquierdo",
+    "ctrl_r":  "Control derecho",
+    "ctrl_l":  "Control izquierdo",
+}
+
+# ── Config (mismo formato que la versión macOS) ───────────────────────────────
+
+def load_config():
+    config = {}
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            config = json.load(f)
+    config.setdefault("providers", {})
+    config.setdefault("active_provider", os.environ.get("WHISPER_PROVIDER", ""))
+    config.setdefault("language", "es")
+    config.setdefault("hotkey", "alt_r")
+    config.setdefault("history", [])
+    if not config["providers"] and os.environ.get("GROQ_API_KEY"):
+        config["providers"]["groq"] = os.environ.get("GROQ_API_KEY")
+    return config
+
+def save_config(config):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=2)
+
+# ── Sonidos ───────────────────────────────────────────────────────────────────
+
+def play_sound(kind):
+    try:
+        import winsound
+        freqs = {"start": 880, "ok": 1320, "error": 220}
+        winsound.Beep(freqs.get(kind, 660), 120)
+    except Exception:
+        pass
+
+# ── Diálogos tkinter ──────────────────────────────────────────────────────────
+
+def _tk_root():
+    import tkinter as tk
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    return root
+
+def dialog_input(prompt, default=""):
+    from tkinter import simpledialog
+    root = _tk_root()
+    try:
+        return simpledialog.askstring("Whisper Dictation VP", prompt,
+                                      initialvalue=default, parent=root) or ""
+    finally:
+        root.destroy()
+
+def dialog_info(msg):
+    from tkinter import messagebox
+    root = _tk_root()
+    try:
+        messagebox.showinfo("Whisper Dictation VP", msg, parent=root)
+    finally:
+        root.destroy()
+
+def dialog_choice_list(prompt, options):
+    """Selector simple basado en botones tkinter. Devuelve la opción o None."""
+    import tkinter as tk
+    result = [None]
+    root = tk.Tk()
+    root.title("Whisper Dictation VP")
+    root.attributes("-topmost", True)
+    tk.Label(root, text=prompt, padx=20, pady=10).pack()
+    def choose(opt):
+        result[0] = opt
+        root.destroy()
+    for opt in options:
+        tk.Button(root, text=opt, width=32,
+                  command=lambda o=opt: choose(o)).pack(padx=20, pady=3)
+    tk.Button(root, text="Cancelar", width=32, command=root.destroy)\
+        .pack(padx=20, pady=(10, 15))
+    root.eval("tk::PlaceWindow . center")
+    root.mainloop()
+    return result[0]
+
+# ── Portapapeles y pegado ─────────────────────────────────────────────────────
+
+def set_clipboard(text):
+    import ctypes
+    CF_UNICODETEXT = 13
+    GMEM_MOVEABLE = 0x0002
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    data = text.encode("utf-16-le") + b"\x00\x00"
+    if not user32.OpenClipboard(None):
+        raise RuntimeError("No se pudo abrir el portapapeles")
+    try:
+        user32.EmptyClipboard()
+        handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+        ptr = kernel32.GlobalLock(handle)
+        ctypes.memmove(ptr, data, len(data))
+        kernel32.GlobalUnlock(handle)
+        user32.SetClipboardData(CF_UNICODETEXT, handle)
+    finally:
+        user32.CloseClipboard()
+
+def paste_text(text):
+    set_clipboard(text)
+    time.sleep(0.15)
+    kb = KeyboardController()
+    with kb.pressed(Key.ctrl):
+        kb.press("v")
+        kb.release("v")
+
+# ── Transcripción (idéntica a la versión macOS) ───────────────────────────────
+
+def build_client(provider, api_key):
+    if provider == "groq":
+        from groq import Groq
+        return Groq(api_key=api_key)
+    elif provider == "openai":
+        from openai import OpenAI
+        return OpenAI(api_key=api_key)
+    elif provider == "deepgram":
+        from deepgram import DeepgramClient
+        return DeepgramClient(api_key=api_key)
+    elif provider == "assemblyai":
+        import assemblyai as aai
+        aai.settings.api_key = api_key
+        return aai
+    return None
+
+def transcribe(provider, client, path, language):
+    lang = None if language == "auto" else language
+    if provider == "groq":
+        with open(path, "rb") as f:
+            r = client.audio.transcriptions.create(
+                file=(os.path.basename(path), f, "audio/wav"),
+                model="whisper-large-v3",
+                language=lang,
+                response_format="text",
+            )
+        return r.strip() if isinstance(r, str) else r.text.strip()
+    elif provider == "openai":
+        with open(path, "rb") as f:
+            r = client.audio.transcriptions.create(
+                model="whisper-1", file=f, language=lang)
+        return r.text.strip()
+    elif provider == "deepgram":
+        with open(path, "rb") as f:
+            data = f.read()
+        response = client.listen.v1.media.transcribe_file(
+            request=data,
+            model="nova-2",
+            language=lang or "es",
+            smart_format=True,
+        )
+        return response.results.channels[0].alternatives[0].transcript.strip()
+    elif provider == "assemblyai":
+        import assemblyai as aai
+        config = aai.TranscriptionConfig(
+            language_code=lang or "es",
+            speech_model=aai.SpeechModel.universal,
+        )
+        result = aai.Transcriber().transcribe(path, config=config)
+        if result.status == aai.TranscriptStatus.error:
+            raise RuntimeError(f"AssemblyAI error: {result.error}")
+        return (result.text or "").strip()
+    return ""
+
+# ── Iconos de bandeja (generados con PIL) ─────────────────────────────────────
+
+def make_icon(state):
+    """idle=micrófono gris, recording=círculo rojo, processing=círculo ámbar."""
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    if state == "recording":
+        d.ellipse([8, 8, 56, 56], fill=(220, 50, 47, 255))
+        d.ellipse([22, 22, 42, 42], fill=(255, 255, 255, 255))
+    elif state == "processing":
+        d.ellipse([8, 8, 56, 56], fill=(230, 160, 30, 255))
+        d.rectangle([28, 16, 36, 36], fill=(255, 255, 255, 255))
+        d.ellipse([28, 40, 36, 48], fill=(255, 255, 255, 255))
+    else:
+        d.rounded_rectangle([22, 8, 42, 38], radius=10, fill=(120, 120, 130, 255))
+        d.arc([14, 20, 50, 48], start=0, end=180, fill=(120, 120, 130, 255), width=5)
+        d.rectangle([30, 48, 34, 56], fill=(120, 120, 130, 255))
+        d.rectangle([22, 56, 42, 60], fill=(120, 120, 130, 255))
+    return img
+
+# ── App ───────────────────────────────────────────────────────────────────────
+
+class WhisperDictationWin:
+
+    def __init__(self):
+        self.config      = load_config()
+        self.lock        = threading.Lock()
+        self.config_lock = threading.Lock()
+
+        self.recording    = False
+        self.audio_frames = []
+
+        self._last_tap_time = 0.0
+        self._key_down      = False
+        self._stop_tap      = False
+
+        if not self.config["providers"]:
+            self._first_run_setup()
+
+        if not self.config["active_provider"] or \
+           self.config["active_provider"] not in self.config["providers"]:
+            if self.config["providers"]:
+                self.config["active_provider"] = list(self.config["providers"].keys())[0]
+                save_config(self.config)
+
+        self._build_client()
+
+        self.stream = sd.InputStream(
+            samplerate=SAMPLE_RATE, channels=CHANNELS,
+            dtype=DTYPE, callback=self._audio_callback, blocksize=1024,
+        )
+        self.stream.start()
+
+        self._listener = keyboard.Listener(
+            on_press=self._on_press, on_release=self._on_release)
+        self._listener.daemon = True
+        self._listener.start()
+
+        self.icon = pystray.Icon(
+            "whisper_dictation_vp",
+            make_icon("idle"),
+            f"Whisper Dictation VP v{APP_VERSION}",
+            menu=pystray.Menu(lambda: self._menu_items()),
+        )
+
+    # ── Primer arranque ───────────────────────────────────────────────────────
+
+    def _first_run_setup(self):
+        names  = [PROVIDERS[p]["name"] for p in PROVIDERS]
+        choice = dialog_choice_list(
+            "Bienvenido a Whisper Dictation VP.\n\n"
+            "Selecciona tu proveedor de transcripción\n"
+            "(Groq es gratuito y recomendado):", names)
+        if not choice:
+            sys.exit(0)
+        provider = next(p for p in PROVIDERS if PROVIDERS[p]["name"] == choice)
+        info = PROVIDERS[provider]
+        api_key = dialog_input(
+            f"API Key de {info['name']}\n(consíguela en {info['url']}):",
+            default=info["placeholder"])
+        if not api_key or api_key == info["placeholder"]:
+            sys.exit(0)
+        self.config["providers"][provider] = api_key
+        self.config["active_provider"] = provider
+        save_config(self.config)
+        dialog_info(
+            "¡Listo! Doble-toque en Alt derecho para grabar,\n"
+            "toque simple para detener.\n\n"
+            "El texto se pega automáticamente donde estés escribiendo.")
+
+    # ── Cliente ───────────────────────────────────────────────────────────────
+
+    def _build_client(self):
+        provider      = self.config["active_provider"]
+        api_key       = self.config["providers"].get(provider, "")
+        self.provider = provider
+        self.client   = build_client(provider, api_key) if provider else None
+
+    # ── Menú de bandeja (dinámico) ────────────────────────────────────────────
+
+    def _menu_items(self):
+        cfg = self.config
+        active_provider = cfg["active_provider"]
+        active_lang     = cfg["language"]
+        hotkey_name     = HOTKEY_NAMES.get(cfg["hotkey"], cfg["hotkey"])
+
+        provider_items = [
+            pystray.MenuItem(
+                PROVIDERS.get(p, {}).get("name", p),
+                self._make_provider_action(p),
+                checked=lambda item, p=p: p == self.config["active_provider"],
+                radio=True)
+            for p in cfg["providers"]
+        ]
+        lang_items = [
+            pystray.MenuItem(
+                name,
+                self._make_lang_action(key),
+                checked=lambda item, k=key: k == self.config["language"],
+                radio=True)
+            for key, name in LANGUAGES.items()
+        ]
+        hotkey_items = [
+            pystray.MenuItem(
+                name,
+                self._make_hotkey_action(key),
+                checked=lambda item, k=key: k == self.config["hotkey"],
+                radio=True)
+            for key, name in HOTKEY_NAMES.items()
+        ]
+        history = cfg.get("history", [])
+        if history:
+            history_items = [
+                pystray.MenuItem(
+                    (t[:60] + "…") if len(t) > 60 else t,
+                    self._make_copy_action(t))
+                for t in history
+            ]
+            history_items += [
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Limpiar historial", self._clear_history),
+            ]
+        else:
+            history_items = [pystray.MenuItem("(vacío)", None, enabled=False)]
+
+        return [
+            pystray.MenuItem(f"Whisper Dictation VP v{APP_VERSION}", None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Proveedor", pystray.Menu(*provider_items)),
+            pystray.MenuItem("Idioma", pystray.Menu(*lang_items)),
+            pystray.MenuItem(f"Tecla: {hotkey_name} (doble-toque)",
+                             pystray.Menu(*hotkey_items)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Historial (clic para copiar)",
+                             pystray.Menu(*history_items)),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Añadir / cambiar API key", self._settings_api),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Salir", self._quit),
+        ]
+
+    def _make_provider_action(self, provider):
+        def action(icon, item):
+            self.config["active_provider"] = provider
+            save_config(self.config)
+            self._build_client()
+        return action
+
+    def _make_lang_action(self, lang):
+        def action(icon, item):
+            self.config["language"] = lang
+            save_config(self.config)
+        return action
+
+    def _make_hotkey_action(self, key):
+        def action(icon, item):
+            self.config["hotkey"] = key
+            save_config(self.config)
+        return action
+
+    def _make_copy_action(self, text):
+        def action(icon, item):
+            try:
+                set_clipboard(text)
+                play_sound("ok")
+            except Exception:
+                pass
+        return action
+
+    def _clear_history(self, icon, item):
+        with self.config_lock:
+            self.config["history"] = []
+            save_config(self.config)
+
+    def _settings_api(self, icon, item):
+        threading.Thread(target=self._settings_api_thread, daemon=True).start()
+
+    def _settings_api_thread(self):
+        names  = [PROVIDERS[p]["name"] for p in PROVIDERS]
+        choice = dialog_choice_list("Selecciona el proveedor:", names)
+        if not choice:
+            return
+        provider = next(p for p in PROVIDERS if PROVIDERS[p]["name"] == choice)
+        info     = PROVIDERS[provider]
+        current  = self.config["providers"].get(provider, "")
+        api_key  = dialog_input(
+            f"API Key de {info['name']}\n(consíguela en {info['url']}):",
+            default=current or info["placeholder"])
+        if not api_key or api_key == info["placeholder"]:
+            return
+        with self.config_lock:
+            self.config["providers"][provider] = api_key
+            if not self.config["active_provider"]:
+                self.config["active_provider"] = provider
+            save_config(self.config)
+        self._build_client()
+
+    # ── Audio ─────────────────────────────────────────────────────────────────
+
+    def _audio_callback(self, indata, frames, time_info, status):
+        with self.lock:
+            if self.recording:
+                self.audio_frames.append(indata.copy())
+
+    def _current_hotkey(self):
+        return HOTKEYS.get(self.config.get("hotkey", "alt_r"), keyboard.Key.alt_r)
+
+    # ── Teclado ───────────────────────────────────────────────────────────────
+
+    def _on_press(self, key):
+        if key != self._current_hotkey():
+            return
+        if self._key_down:
+            return
+        self._key_down = True
+        self._stop_tap = False
+
+        with self.lock:
+            if self.recording:
+                self._stop_tap = True
+                self.recording = False
+                frames         = list(self.audio_frames)
+                self._set_state("processing")
+                threading.Thread(target=self._process, args=(frames,), daemon=True).start()
+
+    def _on_release(self, key):
+        if key != self._current_hotkey():
+            return
+        self._key_down = False
+
+        if self._stop_tap:
+            self._stop_tap = False
+            return
+
+        now = time.time()
+        if now - self._last_tap_time <= DOUBLE_TAP_WINDOW:
+            self._last_tap_time = 0.0
+            with self.lock:
+                self.recording = True
+                self.audio_frames.clear()
+            play_sound("start")
+            self._set_state("recording")
+        else:
+            self._last_tap_time = now
+
+    def _set_state(self, state):
+        try:
+            self.icon.icon = make_icon(state)
+        except Exception:
+            pass
+
+    # ── Procesado ─────────────────────────────────────────────────────────────
+
+    def _process(self, frames):
+        path = None
+        try:
+            if not frames:
+                return
+
+            audio    = np.concatenate(frames, axis=0)
+            duration = len(audio) / SAMPLE_RATE
+
+            if duration < 0.3:
+                play_sound("error")
+                return
+
+            rms = np.sqrt(np.mean(audio.astype(np.float32) ** 2))
+            if rms < 2:
+                return
+
+            fd, path = tempfile.mkstemp(suffix=".wav")
+            os.close(fd)
+            with wave.open(path, "wb") as wf:
+                wf.setnchannels(CHANNELS)
+                wf.setsampwidth(2)
+                wf.setframerate(SAMPLE_RATE)
+                wf.writeframes(audio.tobytes())
+
+            text = transcribe(self.provider, self.client, path,
+                              self.config.get("language", "es"))
+
+            if text:
+                with self.config_lock:
+                    history = self.config.get("history", [])
+                    history.insert(0, text)
+                    self.config["history"] = history[:HISTORY_MAX]
+                    save_config(self.config)
+                paste_text(text)
+                play_sound("ok")
+            else:
+                play_sound("error")
+
+        except Exception as e:
+            play_sound("error")
+            print(f"Error de transcripción: {e}", file=sys.stderr)
+        finally:
+            if path and os.path.exists(path):
+                os.unlink(path)
+            self._set_state("idle")
+
+    # ── Salir ─────────────────────────────────────────────────────────────────
+
+    def _quit(self, icon, item):
+        try:
+            self._listener.stop()
+        except Exception:
+            pass
+        try:
+            self.stream.stop()
+            self.stream.close()
+        except Exception:
+            pass
+        icon.stop()
+
+    def run(self):
+        self.icon.run()
+
+
+if __name__ == "__main__":
+    WhisperDictationWin().run()

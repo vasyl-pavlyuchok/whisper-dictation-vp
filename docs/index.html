@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Whisper Dictation VP — Descargar</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    max-width: 640px; margin: 0 auto; padding: 40px 24px; text-align: center;
+    background: light-dark(#fafafa, #111); color: light-dark(#222, #eee);
+  }
+  h1 { font-size: 2rem; margin-bottom: 8px; }
+  .mic { font-size: 4rem; }
+  p.sub { color: light-dark(#666, #aaa); margin-bottom: 32px; }
+  .btn {
+    display: inline-block; padding: 16px 32px; margin: 8px; border-radius: 12px;
+    background: #0071e3; color: #fff; text-decoration: none; font-size: 1.1rem;
+    font-weight: 600;
+  }
+  .btn:hover { background: #0060c0; }
+  .btn.secondary {
+    background: transparent; color: light-dark(#0071e3, #6db3ff);
+    border: 1px solid light-dark(#0071e3, #6db3ff); font-weight: 400;
+    font-size: 0.95rem; padding: 10px 20px;
+  }
+  #detected { margin: 24px 0 8px; font-size: 0.95rem; color: light-dark(#666, #aaa); }
+  .others { margin-top: 28px; }
+  footer { margin-top: 48px; font-size: 0.85rem; color: light-dark(#999, #777); }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+<div class="mic">🎙</div>
+<h1>Whisper Dictation VP</h1>
+<p class="sub">Dictado por voz con IA para macOS y Windows.<br>
+Doble-toque una tecla, habla, y el texto se pega solo.</p>
+
+<p id="detected"></p>
+<a id="main-download" class="btn" href="https://github.com/vasyl-pavlyuchok/whisper-dictation-vp/releases/latest">Descargar</a>
+
+<div class="others">
+  <p style="font-size:0.9rem; color:light-dark(#888,#999)">Otras versiones:</p>
+  <a class="btn secondary" href="https://github.com/vasyl-pavlyuchok/whisper-dictation-vp/releases/latest/download/WhisperDictationVP-AppleSilicon.pkg">macOS Apple Silicon</a>
+  <a class="btn secondary" href="https://github.com/vasyl-pavlyuchok/whisper-dictation-vp/releases/latest/download/WhisperDictationVP-Intel.pkg">macOS Intel</a>
+  <a class="btn secondary" href="https://github.com/vasyl-pavlyuchok/whisper-dictation-vp/releases/latest/download/WhisperDictationVP-Windows.zip">Windows (beta)</a>
+</div>
+
+<footer>
+  <p>Gratuito y de código abierto (MIT) ·
+  <a href="https://github.com/vasyl-pavlyuchok/whisper-dictation-vp">Código en GitHub</a></p>
+  <p>Diseñado por Vasyl Pavlyuchok &amp; Claude</p>
+</footer>
+
+<script>
+(function () {
+  const base = "https://github.com/vasyl-pavlyuchok/whisper-dictation-vp/releases/latest/download/";
+  const btn = document.getElementById("main-download");
+  const detected = document.getElementById("detected");
+  const ua = navigator.userAgent;
+  let label = "", file = "";
+
+  if (/Windows/i.test(ua)) {
+    label = "Windows"; file = "WhisperDictationVP-Windows.zip";
+  } else if (/Macintosh|Mac OS X/i.test(ua)) {
+    // Safari en Apple Silicon también se anuncia como "Intel" — probamos WebGL
+    let apple = false;
+    try {
+      const gl = document.createElement("canvas").getContext("webgl");
+      const dbg = gl && gl.getExtension("WEBGL_debug_renderer_info");
+      const renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "";
+      apple = /Apple (M\d|GPU)/i.test(renderer);
+    } catch (e) {}
+    if (apple) { label = "macOS (Apple Silicon)"; file = "WhisperDictationVP-AppleSilicon.pkg"; }
+    else       { label = "macOS (Intel)";         file = "WhisperDictationVP-Intel.pkg"; }
+  }
+
+  if (file) {
+    btn.href = base + file;
+    btn.textContent = "Descargar para " + label;
+    detected.textContent = "Hemos detectado tu sistema: " + label;
+  }
+})();
+</script>
+</body>
+</html>

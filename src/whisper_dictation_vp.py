@@ -2,8 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v2.5.1
+Diseñado por Vasyl Pavlyuchok & Claude — v3.0.0
 """
+
+APP_VERSION = "3.0.0"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -192,6 +194,21 @@ if _VIBRANCY_OK:
             NSApp.runModalForWindow_(self._window)
             text = str(self._text_view.string()) if self._text_view else self._text
             return self._result_action, text
+
+
+# ── Permiso de Accesibilidad ──────────────────────────────────────────────────
+
+def check_accessibility(prompt=True):
+    """Comprueba el permiso de Accesibilidad. Con prompt=True, macOS muestra el
+    diálogo del sistema y añade la app a la lista de Accesibilidad."""
+    try:
+        from ApplicationServices import (
+            AXIsProcessTrustedWithOptions, kAXTrustedCheckOptionPrompt,
+        )
+        return bool(AXIsProcessTrustedWithOptions(
+            {kAXTrustedCheckOptionPrompt: prompt}))
+    except Exception:
+        return True  # Si no se puede comprobar, seguimos sin bloquear la app
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -410,6 +427,17 @@ class WhisperDictationApp(rumps.App):
         )
         self.stream.start()
 
+        # Pedir permiso de Accesibilidad (macOS muestra el diálogo del sistema
+        # y añade la app a la lista automáticamente)
+        if not check_accessibility(prompt=True):
+            threading.Thread(target=dialog_info, args=(
+                "Whisper Dictation VP necesita el permiso de Accesibilidad "
+                "para detectar la tecla de dictado y pegar el texto.\n\n"
+                "1. Abre Ajustes del Sistema → Privacidad y seguridad → Accesibilidad\n"
+                "2. Activa «Whisper Dictation VP»\n"
+                "3. Sal de la app (icono 🎙 → Salir) y vuelve a abrirla",
+            ), daemon=True).start()
+
         self._listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release)
         self._listener.daemon = True
@@ -498,7 +526,7 @@ class WhisperDictationApp(rumps.App):
         # ── Menú principal ────────────────────────────────────────────────────
         self.menu.clear()
         self.menu = [
-            rumps.MenuItem("Whisper Dictation VP v2.5.1"),
+            rumps.MenuItem(f"Whisper Dictation VP v{APP_VERSION}"),
             None,
             provider_menu,
             lang_menu,

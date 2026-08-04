@@ -1,82 +1,65 @@
 #!/bin/bash
-# build.sh — Genera WhisperDictationVP.pkg desde el código fuente
+# build.sh — Genera WhisperDictationVP.pkg desde el código fuente.
+# v3.0: la app se empaqueta con PyInstaller (Python embebido) — el usuario
+# final NO necesita tener Python instalado ni se abre ninguna Terminal.
 set -e
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$(mktemp -d)"
 PKG_ROOT="$BUILD_DIR/pkg_root"
-VERSION="2.5.1"
-OUTPUT="$HOME/Desktop/WhisperDictationVP v${VERSION}.pkg"
+VERSION="3.0.0"
+ARCH="$(uname -m)"
+case "$ARCH" in
+  arm64)  ARCH_LABEL="AppleSilicon" ;;
+  x86_64) ARCH_LABEL="Intel" ;;
+  *)      ARCH_LABEL="$ARCH" ;;
+esac
+OUTPUT_DIR="${OUTPUT_DIR:-$HOME/Desktop}"
+OUTPUT="$OUTPUT_DIR/WhisperDictationVP-${ARCH_LABEL}.pkg"
+VENV="$REPO_DIR/.buildenv"
 
-echo "==> Preparando estructura..."
-
-# ── Crear árbol de directorios ────────────────────────────────────────────────
-APP_BUNDLE="$PKG_ROOT/Applications/Whisper Dictation VP.app/Contents"
-mkdir -p "$APP_BUNDLE/MacOS"
-mkdir -p "$APP_BUNDLE/Resources"
-mkdir -p "$PKG_ROOT/usr/local/lib/whisper_dictation_vp"
-
-# ── Copiar script Python ──────────────────────────────────────────────────────
-cp "$REPO_DIR/src/whisper_dictation_vp.py" \
-   "$PKG_ROOT/usr/local/lib/whisper_dictation_vp/"
-
-# ── Copiar Info.plist ─────────────────────────────────────────────────────────
-cp "$REPO_DIR/app/Info.plist" "$APP_BUNDLE/"
-
-# ── Crear ejecutable del .app ─────────────────────────────────────────────────
-# Lanza Python dentro de Terminal (minimizada) para heredar su permiso
-# de Accesibilidad. Incluye detección de Python y protección anti-doble-instancia.
-cat > "$APP_BUNDLE/MacOS/WhisperDictationVP" << 'LAUNCHER'
-#!/bin/bash
-if pgrep -f "whisper_dictation_vp.py" > /dev/null 2>&1; then
-    exit 0
-fi
+# ── 1. Localizar Python 3.11+ para el build ───────────────────────────────────
 PYTHON=""
-for minor in $(seq 11 20); do
-    candidate="/Library/Frameworks/Python.framework/Versions/3.${minor}/bin/python3"
-    [ -f "$candidate" ] && PYTHON="$candidate" && break
+for candidate in \
+    /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 \
+    /Library/Frameworks/Python.framework/Versions/3.12/bin/python3 \
+    /Library/Frameworks/Python.framework/Versions/3.11/bin/python3 \
+    /opt/homebrew/bin/python3 \
+    /usr/local/bin/python3 \
+    "$(command -v python3)"; do
+  if [ -f "$candidate" ]; then
+    if "$candidate" -c "import sys; sys.exit(0 if sys.version_info >= (3,11) else 1)" 2>/dev/null; then
+      PYTHON="$candidate" && break
+    fi
+  fi
 done
-if [ -z "$PYTHON" ]; then
-    for candidate in \
-        /opt/homebrew/opt/python@3.13/bin/python3 \
-        /opt/homebrew/opt/python@3.12/bin/python3 \
-        /opt/homebrew/opt/python@3.11/bin/python3 \
-        /opt/homebrew/bin/python3 \
-        /usr/local/opt/python@3.13/bin/python3 \
-        /usr/local/opt/python@3.12/bin/python3 \
-        /usr/local/opt/python@3.11/bin/python3 \
-        /usr/local/bin/python3; do
-        [ -f "$candidate" ] && PYTHON="$candidate" && break
-    done
-fi
-if [ -z "$PYTHON" ]; then
-    osascript -e 'tell app "System Events" to display dialog "Python no encontrado. Reinstala Whisper Dictation VP." buttons {"OK"} default button 1'
-    exit 1
-fi
-osascript << APPLESCRIPT
-tell application "Terminal"
-    set w to do script "$PYTHON /usr/local/lib/whisper_dictation_vp/whisper_dictation_vp.py"
-    delay 1.5
-    set miniaturized of window 1 to true
-end tell
-APPLESCRIPT
-LAUNCHER
-chmod +x "$APP_BUNDLE/MacOS/WhisperDictationVP"
+[ -z "$PYTHON" ] && { echo "✗ Se necesita Python 3.11+ para compilar."; exit 1; }
+echo "==> Python de build: $PYTHON"
 
-# ── Icono (opcional) ──────────────────────────────────────────────────────────
-ICNS="$REPO_DIR/app/AppIcon.icns"
-if [ -f "$ICNS" ]; then
-  cp "$ICNS" "$APP_BUNDLE/Resources/AppIcon.icns"
-  echo "    Icono incluido."
-else
-  echo "    [aviso] app/AppIcon.icns no encontrado — el .app no tendrá icono personalizado."
+# ── 2. Entorno virtual de build con dependencias + PyInstaller ────────────────
+if [ ! -d "$VENV" ]; then
+  echo "==> Creando entorno de build en .buildenv..."
+  "$PYTHON" -m venv "$VENV"
 fi
+echo "==> Instalando dependencias..."
+"$VENV/bin/pip" install --quiet --upgrade pip
+"$VENV/bin/pip" install --quiet pyinstaller rumps pynput sounddevice numpy \
+  python-dotenv groq openai deepgram-sdk assemblyai \
+  pyobjc-framework-Cocoa pyobjc-framework-ApplicationServices
 
-# ── Imagen de fondo del instalador (opcional) ─────────────────────────────────
-BG="$REPO_DIR/installer/resources/background.png"
-if [ ! -f "$BG" ]; then
-  echo "    [aviso] installer/resources/background.png no encontrado — se usará fondo por defecto."
-fi
+# ── 3. Compilar el .app con PyInstaller ───────────────────────────────────────
+echo "==> Compilando Whisper Dictation VP.app (PyInstaller)..."
+"$VENV/bin/pyinstaller" --noconfirm \
+  --distpath "$BUILD_DIR/dist" \
+  --workpath "$BUILD_DIR/work" \
+  "$REPO_DIR/app/whisper_dictation_vp.spec"
+
+APP_SRC="$BUILD_DIR/dist/Whisper Dictation VP.app"
+[ -d "$APP_SRC" ] || { echo "✗ PyInstaller no generó el .app"; exit 1; }
+
+# ── 4. Montar la raíz del paquete ─────────────────────────────────────────────
+mkdir -p "$PKG_ROOT/Applications"
+cp -R "$APP_SRC" "$PKG_ROOT/Applications/"
 
 echo "==> Generando componente .pkg..."
 pkgbuild \

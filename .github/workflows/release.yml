@@ -1,0 +1,105 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: macOS (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: AppleSilicon
+          - os: macos-15-intel
+            label: Intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compilar instalador .pkg
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          OUTPUT_DIR="$RUNNER_TEMP/out" ./build.sh
+          ls -la "$RUNNER_TEMP/out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.label }}
+          path: ${{ runner.temp }}/out/*.pkg
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller pystray pillow pynput sounddevice numpy python-dotenv groq openai deepgram-sdk assemblyai
+
+      - name: Compilar ejecutable
+        run: |
+          pyinstaller --noconfirm --onefile --noconsole --name WhisperDictationVP src/whisper_dictation_win.py
+
+      - name: Empaquetar zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path pkgout | Out-Null
+          Compress-Archive -Path dist/WhisperDictationVP.exe -DestinationPath pkgout/WhisperDictationVP-Windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: pkgout/WhisperDictationVP-Windows.zip
+          if-no-files-found: error
+
+  release:
+    name: Publicar Release
+    needs: [build-macos, build-windows]
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Listar artefactos
+        run: ls -laR artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+          body: |
+            ## Whisper Dictation VP ${{ github.ref_name }}
+
+            Descarga la versión para tu sistema:
+
+            | Sistema | Archivo |
+            |---------|---------|
+            | macOS Apple Silicon (M1/M2/M3/M4) | `WhisperDictationVP-AppleSilicon.pkg` |
+            | macOS Intel | `WhisperDictationVP-Intel.pkg` |
+            | Windows 10/11 (beta) | `WhisperDictationVP-Windows.zip` |
+
+            La app de macOS es 100% nativa: no necesitas Python instalado ni se abre ninguna Terminal.

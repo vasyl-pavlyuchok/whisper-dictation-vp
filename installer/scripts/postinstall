@@ -15,177 +15,11 @@ dialog_ok() {
   end tell" 2>/dev/null || true
 }
 
-dialog_choice() {
-  # $1=mensaje $2=titulo $3=botones $4=boton_default
-  as_user osascript -e "tell application \"System Events\"
-    activate
-    set r to display dialog \"$1\" with title \"$2\" buttons {$3} default button $4 with icon caution
-    return button returned of r
-  end tell" 2>/dev/null || echo "Cancelar"
-}
+# ── 1. Limpiar instalaciones antiguas (v2.x usaba Python del sistema) ────────
+pkill -f "whisper_dictation_vp.py" 2>/dev/null || true
+rm -rf /usr/local/lib/whisper_dictation_vp 2>/dev/null || true
 
-# ── Función para encontrar Python 3.11+ ──────────────────────────────────────
-find_python() {
-  # Python.org framework (versiones 3.11 a 3.20)
-  for minor in $(seq 11 20); do
-    candidate="/Library/Frameworks/Python.framework/Versions/3.${minor}/bin/python3"
-    [ -f "$candidate" ] && echo "$candidate" && return
-  done
-
-  # Homebrew rutas (Apple Silicon y Intel)
-  for candidate in \
-    /opt/homebrew/opt/python@3.13/bin/python3 \
-    /opt/homebrew/opt/python@3.12/bin/python3 \
-    /opt/homebrew/opt/python@3.11/bin/python3 \
-    /opt/homebrew/bin/python3 \
-    /usr/local/opt/python@3.13/bin/python3 \
-    /usr/local/opt/python@3.12/bin/python3 \
-    /usr/local/opt/python@3.11/bin/python3 \
-    /usr/local/bin/python3; do
-    if [ -f "$candidate" ]; then
-      ver=$("$candidate" -c "import sys; v=sys.version_info; print(v.major,v.minor)" 2>/dev/null)
-      major=$(echo "$ver" | awk '{print $1}')
-      minor=$(echo "$ver" | awk '{print $2}')
-      if [ "$major" -eq 3 ] && [ "$minor" -ge 11 ] 2>/dev/null; then
-        echo "$candidate" && return
-      fi
-    fi
-  done
-}
-
-# ── 1. Buscar Python 3.11+ ────────────────────────────────────────────────────
-PYTHON=$(find_python)
-
-# ── 2. Si no hay Python, ofrecer instalarlo con explicación ──────────────────
-if [ -z "$PYTHON" ]; then
-
-  # ¿Hay Homebrew instalado?
-  BREW=""
-  for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do
-    [ -f "$b" ] && BREW="$b" && break
-  done
-
-  if [ -n "$BREW" ]; then
-    # ── Caso A: Homebrew disponible → instalar Python con él ───────────────
-    CHOICE=$(dialog_choice \
-"Whisper Dictation VP necesita Python 3.11 o superior para funcionar.
-
-¿Qué es Python?
-Python es el lenguaje de programación que hace funcionar esta app. Es gratuito y seguro.
-
-Homebrew (gestor de paquetes) ya está instalado en tu Mac, así que podemos instalar Python automáticamente en 1-2 minutos.
-
-¿Instalamos Python ahora?" \
-      "Instalar Python — Paso necesario" \
-      '"Cancelar", "Instalar Python automáticamente"' \
-      '"Instalar Python automáticamente"')
-
-    if [ "$CHOICE" = "Instalar Python automáticamente" ]; then
-      as_user "$BREW" install python@3.13 2>/dev/null || true
-      PYTHON=$(find_python)
-    else
-      dialog_ok \
-"Instalación cancelada.
-
-Puedes instalar Python más tarde desde:
-https://www.python.org/downloads/macos/
-
-Cuando lo hayas instalado, vuelve a ejecutar este instalador." \
-        "Instalación cancelada" "note"
-      exit 1
-    fi
-
-  else
-    # ── Caso B: sin Homebrew → explicar las dos vías ───────────────────────
-    CHOICE=$(dialog_choice \
-"Whisper Dictation VP necesita Python 3.11 o superior.
-
-¿Qué es Python?
-Python es el lenguaje de programación que hace funcionar esta app. Es gratuito y de código abierto.
-
-Para instalarlo tenemos dos opciones:
-
-1. Instalar Homebrew + Python (recomendado)
-   Homebrew es el gestor de paquetes más popular para Mac. Instala Python y lo mantiene actualizado automáticamente. Se instala en 3-5 minutos.
-
-2. Instalar manualmente desde python.org
-   Descarga el instalador oficial de Python. Más adelante tendrás que volver a ejecutar este instalador.
-
-¿Qué prefieres?" \
-      "Instalar Python — Paso necesario" \
-      '"Cancelar", "Ir a python.org", "Instalar Homebrew + Python"' \
-      '"Instalar Homebrew + Python"')
-
-    if [ "$CHOICE" = "Instalar Homebrew + Python" ]; then
-      dialog_ok \
-"Se abrirá una ventana de Terminal para instalar Homebrew y Python.
-
-Esto puede tardar 3-5 minutos. Cuando termine, vuelve a este instalador y haz clic en «Reintentar instalación» en la app de instalación.
-
-¡No cierres la ventana de Terminal hasta que termine!" \
-        "Instalando Homebrew + Python" "note"
-
-      # Abrir Terminal con el comando de instalación (el usuario puede ver el progreso)
-      as_user osascript -e 'tell application "Terminal"
-        activate
-        do script "echo \"=== Instalando Homebrew ===\"; NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"; echo \"=== Instalando Python 3.13 ===\"; /opt/homebrew/bin/brew install python@3.13 2>/dev/null || /usr/local/bin/brew install python@3.13 2>/dev/null; echo \"=== Listo. Puedes cerrar esta ventana y continuar con la instalación ===\""
-      end tell' 2>/dev/null || true
-
-      dialog_ok \
-"Cuando la Terminal muestre «Listo», vuelve a ejecutar el instalador de Whisper Dictation VP.
-
-Puedes hacer doble clic en WhisperDictationVP.pkg en tu Escritorio." \
-        "Próximos pasos" "note"
-      exit 1
-
-    elif [ "$CHOICE" = "Ir a python.org" ]; then
-      as_user open "https://www.python.org/downloads/macos/"
-      dialog_ok \
-"Se ha abierto la página de descarga de Python en tu navegador.
-
-Pasos:
-1. Descarga la versión más reciente de Python 3
-2. Instálala normalmente (doble clic en el .pkg)
-3. Vuelve a ejecutar este instalador
-
-Puedes descargar Python desde:
-https://www.python.org/downloads/macos/" \
-        "Instala Python y vuelve aquí" "note"
-      exit 1
-    else
-      exit 1
-    fi
-  fi
-
-  # Verificación final tras intento de instalación automática
-  if [ -z "$PYTHON" ]; then
-    dialog_ok \
-"No se pudo instalar Python automáticamente.
-
-Por favor instálalo manualmente:
-https://www.python.org/downloads/macos/
-
-Una vez instalado, vuelve a ejecutar este instalador." \
-      "Python no encontrado" "stop"
-    exit 1
-  fi
-fi
-
-# ── 3. Instalar dependencias Python ──────────────────────────────────────────
-"$PYTHON" -m pip install --quiet --upgrade pip 2>/dev/null || true
-"$PYTHON" -m pip install --quiet \
-  sounddevice numpy pynput python-dotenv rumps groq openai deepgram-sdk assemblyai 2>/dev/null || true
-
-# ── 4. Re-firmar Python.app del framework (pip invalida la firma original) ────
-PYTHON_FRAMEWORK_APP=$(dirname "$(dirname "$(dirname "$(dirname "$PYTHON")")")")/Resources/Python.app
-if [ -d "$PYTHON_FRAMEWORK_APP" ]; then
-  codesign --force --deep --sign - "$PYTHON_FRAMEWORK_APP" 2>/dev/null || true
-fi
-
-# ── 5. Firmar la app instalada ────────────────────────────────────────────────
-codesign --force --sign - "/Applications/Whisper Dictation VP.app" 2>/dev/null || true
-
-# ── 6. Crear LaunchAgent (auto-inicio al login) ───────────────────────────────
+# ── 2. Crear LaunchAgent (auto-inicio al login) ──────────────────────────────
 mkdir -p "$USER_HOME/Library/LaunchAgents"
 cat > "$PLIST" << PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -204,41 +38,38 @@ cat > "$PLIST" << PLISTEOF
     <true/>
     <key>KeepAlive</key>
     <false/>
-    <key>StandardOutPath</key>
-    <string>${USER_HOME}/whisper_dictation_vp.log</string>
-    <key>StandardErrorPath</key>
-    <string>${USER_HOME}/whisper_dictation_vp.log</string>
 </dict>
 </plist>
 PLISTEOF
 chown "$CURRENT_USER" "$PLIST"
 
-# ── 7. Activar LaunchAgent ────────────────────────────────────────────────────
+# ── 3. Activar LaunchAgent ───────────────────────────────────────────────────
 as_user launchctl unload "$PLIST" 2>/dev/null || true
 as_user launchctl load "$PLIST" 2>/dev/null || true
 
-# ── 8. Instrucciones de Accesibilidad ────────────────────────────────────────
+# ── 4. Instrucciones de Accesibilidad ────────────────────────────────────────
 dialog_ok \
-"✅ Whisper Dictation VP 2.5.1 instalado correctamente.
+"✅ Whisper Dictation VP 3.0.0 instalado correctamente.
+
+Ahora es una app 100% nativa: ya no necesita Python ni ninguna ventana de Terminal.
 
 PASO OBLIGATORIO — Permiso de Accesibilidad:
 
-Para que el atajo de teclado funcione debes dar permiso a Terminal:
+Al abrir la app, macOS te pedirá el permiso automáticamente. Si no aparece:
 
-1. Abre: Apple  → Preferencias del Sistema
-   → Seguridad y Privacidad → Privacidad → Accesibilidad
+1. Abre: Ajustes del Sistema → Privacidad y seguridad → Accesibilidad
 
-2. Haz clic en el candado e introduce tu contraseña
+2. Activa la casilla de «Whisper Dictation VP»
 
-3. Activa la casilla de «Terminal»
+3. Sal de la app (icono 🎙 → Salir) y vuelve a abrirla
 
-Sin este permiso la tecla de dictado no funcionará.
+Si venías de una versión anterior, puedes desmarcar «Terminal» de esa lista: ya no hace falta.
 
 Tecla predeterminada: Option derecho
 (doble-toque para iniciar, toque simple para detener)" \
 "Whisper Dictation VP instalado" "note"
 
-# ── 9. Lanzar la app al finalizar ────────────────────────────────────────────
+# ── 5. Lanzar la app al finalizar ────────────────────────────────────────────
 as_user open -a "Whisper Dictation VP" 2>/dev/null || true
 
 exit 0

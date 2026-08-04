@@ -1,8 +1,22 @@
 # Whisper Dictation VP
 
-Dictado por voz para macOS usando inteligencia artificial. Doble-toque **Option derecho** para iniciar la grabación, toque simple para detener — el texto aparece pegado automáticamente en cualquier app.
+Dictado por voz para macOS y Windows usando inteligencia artificial. Doble-toque **Option derecho** para iniciar la grabación, toque simple para detener — el texto aparece pegado automáticamente en cualquier app.
 
-Diseñado por **Vasyl Pavlyuchok** & **Claude** — v2.3.1
+Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.0.0
+
+---
+
+## Descargas
+
+Ve a la página de [**Releases**](../../releases/latest) y descarga la versión para tu sistema:
+
+| Sistema | Archivo |
+|---------|---------|
+| **macOS Apple Silicon** (M1/M2/M3/M4) | `WhisperDictationVP-AppleSilicon.pkg` |
+| **macOS Intel** | `WhisperDictationVP-Intel.pkg` |
+| **Windows 10/11** (beta) | `WhisperDictationVP-Windows.zip` |
+
+> **Novedad v3.0** — La app de macOS ahora es **100% nativa**: lleva Python embebido, así que ya **no necesitas tener Python instalado ni se abre ninguna ventana de Terminal**. Solo instalar y dictar.
 
 ---
 
@@ -20,66 +34,68 @@ El icono en la barra de menús indica el estado:
 
 ---
 
-## Requisitos
+## Proveedores de transcripción
 
-- macOS 11 Big Sur o superior
-- Python 3.11 o superior *(el instalador te ayuda a instalarlo si no lo tienes)*
-- Una API key de cualquiera de los proveedores soportados
+Solo necesitas **una** API key para empezar. **Recomendado: Groq** — es gratuito, muy rápido y usa el modelo Whisper large-v3, el que mejor funciona con diferencia.
 
-### Proveedores de transcripción
-
-| Proveedor | Modelo | Precio | Enlace |
-|-----------|--------|--------|--------|
-| **Groq** (recomendado) | whisper-large-v3 | Gratuito | [console.groq.com](https://console.groq.com) |
+| Proveedor | Modelo | Precio | Consigue tu clave en |
+|-----------|--------|--------|----------------------|
+| **Groq** ⭐ recomendado | whisper-large-v3 | **Gratuito** | [console.groq.com](https://console.groq.com) |
 | OpenAI | whisper-1 | De pago | [platform.openai.com](https://platform.openai.com) |
 | Deepgram | nova-2 | Plan gratuito | [console.deepgram.com](https://console.deepgram.com) |
-| AssemblyAI | — | Plan gratuito | [app.assemblyai.com](https://app.assemblyai.com) |
+| AssemblyAI | universal | Plan gratuito | [app.assemblyai.com](https://app.assemblyai.com) |
 
-Groq es gratuito y más que suficiente para uso personal.
-
----
-
-## Instalación
-
-1. Descarga `WhisperDictationVP.pkg` desde la página de [Releases](../../releases)
-2. Haz doble clic para ejecutar el instalador
-3. El instalador comprueba automáticamente si tienes Python instalado y lo instala si hace falta
-4. Al finalizar aparecerá un aviso recordándote activar el permiso de Accesibilidad (ver abajo)
-5. Al primer arranque, la app te pedirá tu proveedor y API key
+**Cómo conseguir tu clave de Groq (1 minuto):**
+1. Entra en [console.groq.com](https://console.groq.com) y crea una cuenta gratuita
+2. Ve a **API Keys** → **Create API Key**
+3. Copia la clave (empieza por `gsk_...`)
+4. Al abrir Whisper Dictation VP por primera vez, elige **Groq** y pega la clave
 
 ---
 
-## Permisos necesarios
+## Instalación en macOS
 
-### Accesibilidad — obligatorio
+1. Descarga el `.pkg` de tu arquitectura desde [Releases](../../releases/latest)
+2. Haz doble clic para ejecutar el instalador *(si macOS avisa de desarrollador no identificado: clic derecho → Abrir)*
+3. Al finalizar, la app se abre sola y macOS te pedirá los permisos
+4. En el primer arranque, la app te pedirá tu proveedor y API key
 
-La app necesita que **Terminal** tenga permiso de Accesibilidad para poder escuchar la tecla de dictado y pegar el texto.
+### Permisos necesarios
 
-El instalador te recordará este paso, pero los pasos son:
+**Accesibilidad (obligatorio)** — para detectar la tecla de dictado y pegar el texto:
 
-1. Abre **Preferencias del Sistema → Seguridad y Privacidad → Privacidad → Accesibilidad**
-2. Haz clic en el candado e introduce tu contraseña
-3. Activa la casilla de **Terminal**
+1. macOS mostrará el aviso automáticamente al abrir la app. Si no:
+2. **Ajustes del Sistema → Privacidad y seguridad → Accesibilidad**
+3. Activa **Whisper Dictation VP**
+4. Sal de la app (icono 🎙 → Salir) y vuelve a abrirla
 
-Sin este permiso la tecla de dictado no funcionará.
+> Si vienes de la v2.x: el permiso ahora es para «Whisper Dictation VP», ya no para «Terminal». Puedes desmarcar Terminal de la lista.
 
-### Micrófono
+**Micrófono** — macOS lo pedirá automáticamente la primera vez que grabes.
 
-macOS pedirá permiso de micrófono automáticamente la primera vez que grabes.
+---
+
+## Instalación en Windows (beta)
+
+1. Descarga `WhisperDictationVP-Windows.zip` desde [Releases](../../releases/latest)
+2. Descomprime y ejecuta `WhisperDictationVP.exe` *(si SmartScreen avisa: Más información → Ejecutar de todas formas)*
+3. El icono aparece en la bandeja del sistema; en el primer arranque te pedirá tu API key
+4. Doble-toque en **Alt derecho** para grabar, toque simple para detener
 
 ---
 
 ## Funcionalidades
 
 - **Doble-toque para grabar** — inicia la grabación sin mantener la tecla pulsada; toque simple para detener
-- **Historial interactivo** — haz clic en cualquier transcripción para verla completa, copiarla, pegarla o editarla
-- **Panel de configuración** accesible desde el icono de la barra de menús
+- **App nativa** — Python embebido, sin dependencias externas ni ventanas de Terminal
+- **Historial interactivo** — haz clic en cualquier transcripción para verla completa, copiarla o editarla
 - **4 proveedores de IA** — añade, cambia o elimina APIs desde el menú
 - **Últimas 10 transcripciones** guardadas en el historial
 - **Idioma configurable** — español, inglés, francés, alemán, italiano, portugués o automático
 - **Tecla de activación configurable** — Option derecho, Option izquierdo, Control o Command
+- **Detección de silencio** — no envía nada a la API si no hay voz
 - **Feedback sonoro** — Tink al iniciar, Pop al transcribir, Basso si hay un error
-- Se inicia automáticamente al arrancar el Mac
+- Se inicia automáticamente al arrancar el equipo
 
 ---
 
@@ -91,7 +107,23 @@ El archivo de configuración se guarda en `~/.whisper_dictation_vp.json`. Para r
 
 ---
 
+## Compilar desde el código fuente
+
+**macOS** (necesitas Python 3.11+ solo para compilar):
+
+```bash
+./build.sh
+```
+
+Genera `WhisperDictationVP v3.0.0.pkg` en el Escritorio, con la app y su Python embebido vía PyInstaller.
+
+**Releases automáticas** — al subir un tag `v*`, GitHub Actions compila las tres versiones (macOS arm64, macOS x86_64 y Windows) y las publica en Releases.
+
+---
+
 ## Desinstalación
+
+**macOS:**
 
 ```bash
 launchctl unload ~/Library/LaunchAgents/com.vasyl.whisper-dictation-vp.plist
@@ -101,21 +133,35 @@ sudo rm -rf /usr/local/lib/whisper_dictation_vp
 rm -f ~/.whisper_dictation_vp.json
 ```
 
+**Windows:** elimina la carpeta descomprimida y `%USERPROFILE%\.whisper_dictation_vp.json`.
+
 ---
 
 ## Changelog
 
+### v3.0.0
+- **App 100% nativa en macOS** — PyInstaller con Python embebido: ya no hace falta tener Python instalado ni queda ninguna ventana de Terminal abierta
+- **Permiso de Accesibilidad propio** — la app pide el permiso con el diálogo del sistema y aparece como «Whisper Dictation VP» (antes había que dárselo a Terminal)
+- **Instalador simplificado** — sin instalación de Python ni Homebrew: instalar y listo
+- **Versión Windows (beta)** — icono en bandeja del sistema, mismo flujo de doble-toque
+- **CI/CD** — GitHub Actions compila y publica automáticamente las versiones de macOS (Intel + Apple Silicon) y Windows
+
+### v2.5.1
+- Arreglos de transcripción para Deepgram y AssemblyAI
+- Copia rápida en historial
+
+### v2.4
+- UI limpia, transparencia real (NSVisualEffectView), audio nativo y menú mejorado
+- Umbral de silencio calibrado al micrófono
+
 ### v2.3.1
-- **Submenú Proveedor** — cambia de proveedor directamente desde el menú, con checkmark en el activo
-- **Submenú Idioma** — cambia el idioma directamente desde el menú, sin pasar por Configuración
-- **Historial mejorado** — clic abre la transcripción completa directamente, editable, con botones Copiar / Copiar y pegar
-- **Botón Limpiar historial** en el submenú del historial
-- **Detección de silencio** — si no hay voz, no se envía nada a la API (evita transcripciones fantasma como "Gracias.")
+- Submenús de proveedor e idioma con checkmark
+- Historial mejorado con edición
+- Detección de silencio
 
 ### v2.1
 - Detección automática de Python (3.11–3.13, Homebrew y framework)
-- Protección anti-doble-instancia en el launcher
-- Soporte multi-proveedor con gestión desde el menú
+- Protección anti-doble-instancia
 
 ### v2.0
 - Rediseño completo con soporte de múltiples proveedores
