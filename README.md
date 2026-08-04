@@ -161,6 +161,9 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.5.3 (solo Windows)
+- Consolida los arreglos de la v3.5.2 en una release verificada (el tag anterior apuntaba a un commit intermedio)
+
 ### v3.5.2 (solo Windows — en Mac puedes ignorar esta actualización)
 - **El dictado ya no te borra el portapapeles** — antes cada transcripción vaciaba el portapapeles y lo sustituía: copiabas algo, dictabas una frase y al pegar aparecía la frase dictada en vez de lo tuyo. Ahora se guarda lo que hubiera, se pega la transcripción y se restaura. La transcripción sigue disponible en el historial del menú
 - **Corregidas las llamadas al portapapeles de Windows en 64 bits** — `GlobalAlloc` y `GlobalLock` se llamaban sin declarar el tipo de retorno, así que ctypes asumía un entero de 32 bits y truncaba los punteros de 64: el `memmove` escribía en una dirección equivocada. Funcionaba de milagro (el heap suele caer por debajo de los 4 GB); cuando no, era corrupción de memoria o cierre en seco. Ahora todas las firmas están declaradas y se comprueban los errores
