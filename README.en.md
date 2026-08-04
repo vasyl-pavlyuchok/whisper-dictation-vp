@@ -76,21 +76,14 @@ You only need **one** API key to get started. **Recommended: Groq** — free, bl
 
 ### Required permissions
 
-macOS splits what the app needs into **two separate permissions**. **Both are required**: with only one the app starts, the 🎙 icon shows up in the menu bar… and the key does nothing.
+**Accessibility (required)** — to detect the dictation key and paste the text:
 
-| Permission | What for | If missing |
-|------------|----------|------------|
-| **Input Monitoring** | **Read** the dictation key | The app receives no keystrokes at all: pressing the key does nothing |
-| **Accessibility** | **Paste** the transcribed text | It records and transcribes, but the text is never pasted |
+1. macOS shows the prompt automatically when the app opens. If it doesn't:
+2. **System Settings → Privacy & Security → Accessibility**
+3. Enable **Whisper Dictation VP**
+4. Quit the app (🎙 icon → Salir) and open it again
 
-1. macOS shows both prompts automatically when the app opens. If it doesn't:
-2. **System Settings → Privacy & Security → Input Monitoring** → enable **Whisper Dictation VP**
-3. **System Settings → Privacy & Security → Accessibility** → enable **Whisper Dictation VP**
-4. Quit the app (🎙 icon → Quit) and open it again
-
-> **The classic failure:** having only Accessibility enabled. The checkbox is ticked, everything *looks* right, and the key still does nothing — because what authorises *reading* the keyboard is Input Monitoring, not Accessibility.
-
-> Both permissions must be re-granted after each update because the app's signature changes; it's one click per version.
+> Accessibility must be re-granted after each update because the app's signature changes; it's one click per version.
 
 **Microphone** — macOS asks automatically the first time you record.
 
@@ -157,7 +150,7 @@ rm -f ~/.whisper_dictation_vp.json
 
 See the full changelog (in Spanish) in [README.md](README.md#changelog). Highlights:
 
-- **v3.5.2** — fixes the long-standing "the key does nothing" bug on macOS: the app only ever requested Accessibility, but reading the keyboard requires the separate **Input Monitoring** permission (`kTCCServiceListenEvent`). Both listening channels depended on that missing grant, and without `IOHIDRequestAccess` the app never even appeared in the Input Monitoring list. Adds a visible warning in the menu, hot re-attach once granted, and `tools/diagnostico.sh`
+- **v3.5.2** (Windows only) — dictation no longer wipes your clipboard (it is saved and restored around the paste); fixed 64-bit `ctypes` clipboard calls that truncated pointers; single-instance mutex so two copies can't both listen, record and paste; no more audio dropouts when stopping a recording
 - **v3.2.0** — update notifications with opt-out toggle; dual hotkey listening channel (native NSEvent monitor + pynput)
 - **v3.1.x** — AI Format (LLM cleanup), personal dictionary, automatic language detection with 17 language options, native clipboard, critical hotkey fixes
 - **v3.0.0** — fully native macOS app (embedded Python), Windows beta, CI/CD releases

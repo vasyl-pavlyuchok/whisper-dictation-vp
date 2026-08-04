@@ -79,19 +79,12 @@ Solo necesitas **una** API key para empezar. **Recomendado: Groq** — es gratui
 
 ### Permisos necesarios
 
-macOS separa en **dos permisos distintos** lo que la app necesita. **Hacen falta los dos**: con uno solo la app arranca, el icono 🎙 aparece en la barra… y la tecla no responde.
+**Accesibilidad (obligatorio)** — para detectar la tecla de dictado y pegar el texto:
 
-| Permiso | Para qué | Si falta |
-|---------|----------|----------|
-| **Monitorización de entrada** | **Leer** la tecla de dictado | La app no recibe ninguna pulsación: nada ocurre al pulsar la tecla |
-| **Accesibilidad** | **Pegar** el texto transcrito | Graba y transcribe, pero el texto no se pega |
-
-1. macOS mostrará los dos avisos automáticamente al abrir la app. Si no:
-2. **Ajustes del Sistema → Privacidad y seguridad → Monitorización de entrada** → activa **Whisper Dictation VP**
-3. **Ajustes del Sistema → Privacidad y seguridad → Accesibilidad** → activa **Whisper Dictation VP**
+1. macOS mostrará el aviso automáticamente al abrir la app. Si no:
+2. **Ajustes del Sistema → Privacidad y seguridad → Accesibilidad**
+3. Activa **Whisper Dictation VP**
 4. Sal de la app (icono 🎙 → Salir) y vuelve a abrirla
-
-> **El fallo clásico:** tener solo Accesibilidad activada. La casilla aparece marcada, todo *parece* correcto y la tecla sigue sin hacer nada — porque quien autoriza a *leer* el teclado es Monitorización de entrada, no Accesibilidad.
 
 > Si vienes de la v2.x: el permiso ahora es para «Whisper Dictation VP», ya no para «Terminal». Puedes desmarcar Terminal de la lista.
 
@@ -168,17 +161,12 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
-### v3.5.2 — arreglo del fallo histórico «la tecla no responde» (macOS)
-- **La app pedía solo uno de los dos permisos que necesita.** macOS separa en dos servicios TCC distintos lo que hace falta: `kTCCServiceAccessibility` para **pegar** el texto y `kTCCServiceListenEvent` (**Monitorización de entrada**) para **leer** la tecla de dictado. La app solo pedía el primero, así que el event tap de pynput y el monitor de `NSEvent` se creaban sin error pero nunca recibían un solo evento de teclado
-- Por eso **el doble canal de escucha de la v3.1.3 no arregló nada**: los dos canales dependen del mismo permiso que faltaba
-- Y como nunca se llamaba a `IOHIDRequestAccess` ni se declaraba `NSInputMonitoringUsageDescription`, la app **ni siquiera aparecía** en la lista de Monitorización de entrada: no había forma de activarla a mano
-- **Aviso visible en el menú** cuando falta un permiso, con acceso directo al panel correcto — antes una app sorda se veía idéntica a una que funciona
-- **Reenganche en caliente**: al conceder el permiso, los listeners se recrean solos sin reiniciar la app
-- El instalador resetea `ListenEvent` además de `Accessibility` (con firma ad-hoc los dos quedan huérfanos en cada build)
-- **`tools/diagnostico.sh`** — diagnóstico local que dice en 5 segundos qué permiso falta, cuántos eventos de teclado ha recibido la app y si el build instalado lleva el arreglo
-- Arreglado un `IndexError` que mataba la app durante el arranque, sin icono ni aviso, si el primer arranque terminaba sin proveedor
-- Arreglado `dialog_choice()`: comparaba con el literal `"Cancelar"`, así que con la interfaz en inglés «Cancel» salía como una opción más de la lista (era el camino que llevaba al `IndexError` anterior)
-- Windows: el aviso de bienvenida decía «Alt derecho» cuando la tecla por defecto pasó a ser Alt izquierdo en la v3.4.1; ahora se lee de la configuración
+### v3.5.2 (solo Windows — en Mac puedes ignorar esta actualización)
+- **El dictado ya no te borra el portapapeles** — antes cada transcripción vaciaba el portapapeles y lo sustituía: copiabas algo, dictabas una frase y al pegar aparecía la frase dictada en vez de lo tuyo. Ahora se guarda lo que hubiera, se pega la transcripción y se restaura. La transcripción sigue disponible en el historial del menú
+- **Corregidas las llamadas al portapapeles de Windows en 64 bits** — `GlobalAlloc` y `GlobalLock` se llamaban sin declarar el tipo de retorno, así que ctypes asumía un entero de 32 bits y truncaba los punteros de 64: el `memmove` escribía en una dirección equivocada. Funcionaba de milagro (el heap suele caer por debajo de los 4 GB); cuando no, era corrupción de memoria o cierre en seco. Ahora todas las firmas están declaradas y se comprueban los errores
+- **Instancia única** — el instalador crea acceso directo en el menú Inicio y en el arranque de Windows, así que era fácil acabar con dos copias escuchando la misma tecla: las dos grababan y las dos pegaban, y el texto salía duplicado. Ahora un mutex con nombre lo impide (la versión de macOS ya se protegía; esta no tenía nada)
+- **Sin cortes de audio al parar la grabación** — el pitido (`winsound.Beep`, que bloquea 120 ms) y el redibujado del icono se hacían reteniendo el mismo lock que necesita el hilo de tiempo real de PortAudio, con overflows justo al cerrar la grabación. Ahora dentro del lock solo va lo imprescindible
+- El aviso de bienvenida decía «Alt derecho» cuando la tecla por defecto pasó a ser Alt izquierdo en la v3.4.1; ahora se lee de la configuración
 
 ### v3.5.1 (solo Windows — en Mac puedes ignorar esta actualización)
 - **Selector de micrófono en el menú** — caso real diagnosticado: Windows daba como entrada predeterminada el micrófono de una webcam que no captaba nada (RMS plano) y la app "no transcribía"; ahora eliges el micrófono correcto desde el menú de la bandeja y queda guardado

@@ -66,14 +66,8 @@ app = BUNDLE(
         "NSMicrophoneUsageDescription":
             "Whisper Dictation VP necesita el micrófono para grabar tu voz.",
         "NSAccessibilityUsageDescription":
-            "Whisper Dictation VP necesita Accesibilidad para pegar el texto "
-            "transcrito donde estés escribiendo.",
-        # Sin esta clave macOS no muestra el diálogo de «Monitorización de
-        # entrada» y la app nunca recibe las pulsaciones de la tecla de
-        # dictado, aunque Accesibilidad esté concedida.
-        "NSInputMonitoringUsageDescription":
-            "Whisper Dictation VP necesita Monitorización de entrada para "
-            "detectar la tecla de dictado.",
+            "Whisper Dictation VP necesita Accesibilidad para detectar la "
+            "tecla de dictado y pegar el texto.",
         "NSAppleEventsUsageDescription":
             "Whisper Dictation VP necesita enviar eventos a System Events "
             "para pegar el texto transcrito.",
