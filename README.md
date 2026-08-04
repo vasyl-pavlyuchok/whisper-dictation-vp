@@ -95,9 +95,13 @@ Solo necesitas **una** API key para empezar. **Recomendado: Groq** — es gratui
 ## Instalación en Windows (beta)
 
 1. Descarga `WhisperDictationVP-Windows.zip` desde [Releases](../../releases/latest)
-2. Descomprime y ejecuta `WhisperDictationVP.exe` *(si SmartScreen avisa: Más información → Ejecutar de todas formas)*
-3. El icono aparece en la bandeja del sistema; en el primer arranque te pedirá tu API key
-4. Doble-toque en **Alt derecho** para grabar, toque simple para detener
+2. Descomprime y ejecuta `WhisperDictationVP.exe`
+3. **SmartScreen mostrará un aviso azul** («Windows protegió su PC») porque la app no está firmada — es normal en software open source: pulsa **«Más información» → «Ejecutar de todas formas»**. Solo lo pide la primera vez.
+4. El icono aparece en la bandeja del sistema; en el primer arranque te pedirá tu API key
+5. Doble-toque en **Alt izquierdo** para grabar, toque simple para detener — mientras grabas verás una **píldora flotante** «● Grabando…» abajo en el centro de la pantalla
+6. *(Opcional)* Para que arranque sola al encender: `Win+R` → `shell:startup` → pega ahí un acceso directo al exe
+
+> **Consejos**: en teclados españoles el Alt derecho es AltGr — si prefieres esa tecla, elígela en el menú del icono. Si no transcribe nada, revisa **Configuración → Privacidad → Micrófono → «Permitir que las aplicaciones de escritorio accedan al micrófono»**, y consulta el log de diagnóstico en `%USERPROFILE%\whisper_dictation_vp.log` (ábrelo con el Bloc de notas).
 
 ---
 
@@ -157,6 +161,13 @@ rm -f ~/.whisper_dictation_vp.json
 ---
 
 ## Changelog
+
+### v3.4.1 (solo Windows — en Mac puedes ignorar esta actualización)
+- **Indicador flotante «● Grabando… / Transcribiendo»** — píldora siempre visible abajo-centro, porque el icono de la bandeja de Windows suele quedar oculto tras la flecha
+- **Sonido al parar la grabación** — feedback de tres tiempos: iniciar (agudo), parar (medio), texto pegado (ok) o error (grave)
+- **Alt izquierdo como tecla por defecto** — el Alt derecho es AltGr en teclados españoles y Windows lo trata como otra tecla
+- **Log de diagnóstico** en `%USERPROFILE%\whisper_dictation_vp.log` — registra micrófono detectado, RMS del audio, transcripciones y errores con detalle; el silencio del micrófono ahora suena a error y queda explicado en el log
+- **Aviso claro si el micrófono está bloqueado** — con la ruta exacta del ajuste de privacidad de Windows
 
 ### v3.4.0
 - **Iconos profesionales en el menú** — set Lucide monocromo (template: se adapta a modo claro/oscuro), adiós a los emojis

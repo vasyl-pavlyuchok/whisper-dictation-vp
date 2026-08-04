@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.4.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.4.1
 """
 
-APP_VERSION = "3.4.0"
+APP_VERSION = "3.4.1"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -66,6 +66,18 @@ HOTKEY_NAMES = {
     "ctrl_l":  "Control izquierdo",
 }
 
+LOG_FILE = os.path.expanduser("~/whisper_dictation_vp.log")
+
+def dbg(msg):
+    """Log de diagnóstico con rotación (~256 KB). Ábrelo con el Bloc de notas."""
+    try:
+        if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > 262144:
+            os.replace(LOG_FILE, LOG_FILE + ".old")
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+    except Exception:
+        pass
+
 # ── Config (mismo formato que la versión macOS) ───────────────────────────────
 
 def load_config():
@@ -76,7 +88,7 @@ def load_config():
     config.setdefault("providers", {})
     config.setdefault("active_provider", os.environ.get("WHISPER_PROVIDER", ""))
     config.setdefault("language", "auto")
-    config.setdefault("hotkey", "alt_r")
+    config.setdefault("hotkey", "alt")
     config.setdefault("history", [])
     config.setdefault("ai_format", False)
     config.setdefault("dictionary", [])
@@ -114,7 +126,7 @@ def fetch_latest_version():
 def play_sound(kind):
     try:
         import winsound
-        freqs = {"start": 880, "ok": 1320, "error": 220}
+        freqs = {"start": 880, "stop": 520, "ok": 1320, "error": 220}
         winsound.Beep(freqs.get(kind, 660), 120)
     except Exception:
         pass
@@ -289,6 +301,72 @@ def ai_cleanup(provider, client, text, dictionary=None):
         return text
     return cleaned if cleaned else text
 
+# ── Indicador flotante de estado ──────────────────────────────────────────────
+
+class StatusOverlay:
+    """Píldora flotante siempre visible (abajo-centro) mientras se graba o
+    transcribe — el icono de la bandeja de Windows suele quedar oculto tras
+    la flecha, así que hace falta feedback visual en pantalla."""
+
+    STYLES = {
+        "recording":  ("●  Grabando…",      "#c62828"),
+        "processing": ("…  Transcribiendo", "#a8741a"),
+    }
+
+    def __init__(self):
+        import queue as _queue
+        self._queue = _queue.Queue()
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        try:
+            import tkinter as tk
+            self._tk = tk
+            self.root = tk.Tk()
+            self.root.withdraw()
+            self.root.overrideredirect(True)
+            self.root.attributes("-topmost", True)
+            try:
+                self.root.attributes("-alpha", 0.93)
+            except Exception:
+                pass
+            self.label = tk.Label(self.root, text="", fg="white",
+                                  font=("Segoe UI", 11, "bold"),
+                                  padx=16, pady=7)
+            self.label.pack()
+            self._poll()
+            self.root.mainloop()
+        except Exception as e:
+            dbg(f"overlay no disponible: {e}")
+
+    def _poll(self):
+        try:
+            while True:
+                self._apply(self._queue.get_nowait())
+        except Exception:
+            pass
+        self.root.after(120, self._poll)
+
+    def _apply(self, state):
+        style = self.STYLES.get(state)
+        if not style:
+            self.root.withdraw()
+            return
+        text, color = style
+        self.label.config(text=text, bg=color)
+        self.root.configure(bg=color)
+        self.root.update_idletasks()
+        w = self.label.winfo_reqwidth()
+        h = self.label.winfo_reqheight()
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{sh - h - 70}")
+        self.root.deiconify()
+        self.root.lift()
+
+    def set_state(self, state):
+        self._queue.put(state)
+
 # ── Iconos de bandeja (generados con PIL) ─────────────────────────────────────
 
 def make_icon(state):
@@ -336,11 +414,30 @@ class WhisperDictationWin:
 
         self._build_client()
 
-        self.stream = sd.InputStream(
-            samplerate=SAMPLE_RATE, channels=CHANNELS,
-            dtype=DTYPE, callback=self._audio_callback, blocksize=1024,
-        )
-        self.stream.start()
+        self.overlay = StatusOverlay()
+
+        try:
+            dev = sd.query_devices(kind="input")
+            dbg(f"micrófono de entrada: {dev.get('name')} "
+                f"(canales: {dev.get('max_input_channels')})")
+        except Exception as e:
+            dbg(f"sin dispositivo de entrada: {e}")
+
+        try:
+            self.stream = sd.InputStream(
+                samplerate=SAMPLE_RATE, channels=CHANNELS,
+                dtype=DTYPE, callback=self._audio_callback, blocksize=1024,
+            )
+            self.stream.start()
+            dbg("stream de audio iniciado")
+        except Exception as e:
+            dbg(f"ERROR abriendo el micrófono: {e}")
+            dialog_info(
+                "No se pudo abrir el micrófono.\n\n"
+                "Comprueba: Configuración → Privacidad y seguridad → "
+                "Micrófono → activa «Permitir que las aplicaciones de "
+                "escritorio accedan al micrófono».")
+            raise
 
         self._listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release)
@@ -356,6 +453,8 @@ class WhisperDictationWin:
 
         self._update_available = None
         threading.Thread(target=self._update_check_loop, daemon=True).start()
+        dbg(f"app v{APP_VERSION} iniciada — hotkey={self.config.get('hotkey')} "
+            f"proveedor={self.config.get('active_provider')}")
 
     def _update_check_loop(self):
         time.sleep(15)
@@ -622,6 +721,8 @@ class WhisperDictationWin:
                 self._stop_tap = True
                 self.recording = False
                 frames         = list(self.audio_frames)
+                play_sound("stop")
+                dbg(f"grabación parada — {len(frames)} bloques de audio")
                 self._set_state("processing")
                 threading.Thread(target=self._process, args=(frames,), daemon=True).start()
 
@@ -643,6 +744,7 @@ class WhisperDictationWin:
                 self.recording = True
                 self.audio_frames.clear()
             play_sound("start")
+            dbg("grabación iniciada")
             self._set_state("recording")
         else:
             self._last_tap_time = now
@@ -652,6 +754,10 @@ class WhisperDictationWin:
             self.icon.icon = make_icon(state)
         except Exception:
             pass
+        try:
+            self.overlay.set_state(state)
+        except Exception:
+            pass
 
     # ── Procesado ─────────────────────────────────────────────────────────────
 
@@ -659,17 +765,25 @@ class WhisperDictationWin:
         path = None
         try:
             if not frames:
+                dbg("sin audio: 0 bloques (¿el micrófono no entrega datos?)")
+                play_sound("error")
                 return
 
             audio    = np.concatenate(frames, axis=0)
             duration = len(audio) / SAMPLE_RATE
 
             if duration < 0.3:
+                dbg(f"grabación demasiado corta ({duration:.2f}s)")
                 play_sound("error")
                 return
 
             rms = np.sqrt(np.mean(audio.astype(np.float32) ** 2))
+            dbg(f"audio: {duration:.1f}s, RMS={rms:.1f}")
             if rms < 2:
+                dbg("SILENCIO detectado — el micrófono no capta tu voz. "
+                    "Revisa el micrófono predeterminado en Windows y el "
+                    "permiso de micrófono para apps de escritorio.")
+                play_sound("error")
                 return
 
             fd, path = tempfile.mkstemp(suffix=".wav")
@@ -683,6 +797,7 @@ class WhisperDictationWin:
             dictionary = self.config.get("dictionary", [])
             text = transcribe(self.provider, self.client, path,
                               self.config.get("language", "es"), dictionary)
+            dbg(f"transcripción: {len(text)} caracteres")
 
             if text and self.config.get("ai_format"):
                 try:
@@ -703,7 +818,8 @@ class WhisperDictationWin:
 
         except Exception as e:
             play_sound("error")
-            print(f"Error de transcripción: {e}", file=sys.stderr)
+            import traceback
+            dbg(f"ERROR de transcripción: {e}\n{traceback.format_exc()}")
         finally:
             if path and os.path.exists(path):
                 os.unlink(path)

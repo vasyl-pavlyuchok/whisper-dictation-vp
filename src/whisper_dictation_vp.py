@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.4.0
+Diseñado por Vasyl Pavlyuchok & Claude — v3.4.1
 """
 
-APP_VERSION = "3.4.0"
+APP_VERSION = "3.4.1"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
