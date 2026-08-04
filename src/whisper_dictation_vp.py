@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.5.1
+Diseñado por Vasyl Pavlyuchok & Claude — v3.5.2
 """
 
-APP_VERSION = "3.5.1"
+APP_VERSION = "3.5.2"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -109,6 +109,8 @@ TR = {
                    "Después sal de la app (icono 🎙 → Salir) y vuelve a abrirla.",
         "ax_open": "Abrir Accesibilidad",
         "im_open": "Abrir Monitorización de entrada", "ok": "OK",
+        "perm_missing": "⚠️ Falta permiso: {} — pulsa para arreglarlo",
+        "perm_input": "Monitorización de entrada", "perm_ax": "Accesibilidad",
         "hotkeys": {
             "alt_r": "Option derecho", "alt": "Option izquierdo",
             "alt_l": "Option izquierdo", "cmd": "Command izquierdo",
@@ -165,6 +167,8 @@ TR = {
                    "Then quit the app (🎙 icon → Quit) and open it again.",
         "ax_open": "Open Accessibility",
         "im_open": "Open Input Monitoring", "ok": "OK",
+        "perm_missing": "⚠️ Missing permission: {} — click to fix",
+        "perm_input": "Input Monitoring", "perm_ax": "Accessibility",
         "hotkeys": {
             "alt_r": "Right Option", "alt": "Left Option",
             "alt_l": "Left Option", "cmd": "Left Command",
@@ -780,6 +784,15 @@ class WhisperDictationApp(rumps.App):
             save_config(self.config)
 
         self._build_client()
+
+        # Permisos: comprobación SILENCIOSA de LOS DOS que hacen falta, ANTES
+        # de construir el menú — si falta alguno, el menú lo enseña arriba del
+        # todo en vez de dejar al usuario con una app que parece viva y es sorda.
+        self._perm_ax = check_accessibility(prompt=False)
+        self._perm_im = check_input_monitoring(prompt=False)
+        dbg(f"permisos — Accesibilidad: {'OK' if self._perm_ax else 'NO'} | "
+            f"Monitorización de entrada: {'OK' if self._perm_im else 'NO'}")
+
         self._build_menu()
 
         self.stream = sd.InputStream(
@@ -788,14 +801,9 @@ class WhisperDictationApp(rumps.App):
         )
         self.stream.start()
 
-        # Permisos: comprobación SILENCIOSA primero de LOS DOS que hacen falta.
         # Solo si falta alguno pedimos con el diálogo del sistema — y únicamente
         # una vez por versión, para no ser pesados en cada arranque.
-        ax_ok = check_accessibility(prompt=False)
-        im_ok = check_input_monitoring(prompt=False)
-        dbg(f"permisos — Accesibilidad: {'OK' if ax_ok else 'NO'} | "
-            f"Monitorización de entrada: {'OK' if im_ok else 'NO'}")
-        if not (ax_ok and im_ok):
+        if not (self._perm_ax and self._perm_im):
             if self.config.get("ax_prompted_version") != APP_VERSION:
                 with self.config_lock:
                     self.config["ax_prompted_version"] = APP_VERSION
@@ -803,37 +811,16 @@ class WhisperDictationApp(rumps.App):
                 # En hilo aparte: IOHIDRequestAccess bloquea hasta que el
                 # usuario responde y no debe retrasar el icono de la barra.
                 threading.Thread(target=self._request_permissions,
-                                 args=(ax_ok, im_ok), daemon=True).start()
+                                 args=(self._perm_ax, self._perm_im),
+                                 daemon=True).start()
+            # Vigila la concesión en caliente para reenganchar los listeners
+            # sin obligar a reiniciar la app.
+            threading.Thread(target=self._permission_watch_loop,
+                             daemon=True).start()
 
-        self._listener = keyboard.Listener(
-            on_press=self._on_press, on_release=self._on_release)
-        self._listener.daemon = True
-        self._listener.start()
-
-        # Segundo canal de escucha: NSEvent global monitor (API nativa de
-        # macOS, solo requiere Accesibilidad). El event tap de pynput puede
-        # crearse "muerto" en apps empaquetadas aunque el permiso esté
-        # concedido; con dos canales y dedupe, si uno falla el otro funciona.
+        self._listener   = None
         self._ns_monitor = None
-        try:
-            from AppKit import NSEvent
-
-            def _monitor_handler(event):
-                try:
-                    vk = int(event.keyCode())
-                    flags = int(event.modifierFlags())
-                    mask = NSEVENT_FLAG_MASKS.get(vk, 0)
-                    self._handle_key_event(vk, bool(flags & mask), False,
-                                           source="nsevent")
-                except Exception as e:
-                    dbg(f"monitor nsevent error: {e}")
-
-            self._ns_monitor = NSEvent.\
-                addGlobalMonitorForEventsMatchingMask_handler_(
-                    NSEVENT_MASK_FLAGS_CHANGED, _monitor_handler)
-            dbg(f"monitor NSEvent: {'activo' if self._ns_monitor else 'FALLÓ'}")
-        except Exception as e:
-            dbg(f"monitor NSEvent no disponible: {e}")
+        self._start_listeners()
 
         dbg(f"app v{APP_VERSION} iniciada — hotkey={self.config.get('hotkey')} "
             f"(vk={self._current_hotkey_vk()}) proveedor={self.provider}")
@@ -912,6 +899,86 @@ class WhisperDictationApp(rumps.App):
                 "el listener funciona")
         except Exception as e:
             dbg(f"SELFTEST error: {e}")
+
+    # ── Canales de escucha del hotkey ─────────────────────────────────────────
+
+    def _start_listeners(self):
+        """Arranca los dos canales de escucha. Se puede llamar más de una vez:
+        si el permiso llega tarde, el event tap creado "muerto" se sustituye
+        por uno nuevo sin obligar al usuario a reiniciar la app."""
+        self._stop_listeners()
+
+        self._listener = keyboard.Listener(
+            on_press=self._on_press, on_release=self._on_release)
+        self._listener.daemon = True
+        self._listener.start()
+
+        # Segundo canal: NSEvent global monitor (API nativa de macOS). Ojo —
+        # los DOS canales necesitan Monitorización de entrada, así que este
+        # no es un plan B frente a un permiso que falta, solo frente a un tap
+        # de pynput que se cuelgue.
+        try:
+            from AppKit import NSEvent
+
+            def _monitor_handler(event):
+                try:
+                    vk = int(event.keyCode())
+                    flags = int(event.modifierFlags())
+                    mask = NSEVENT_FLAG_MASKS.get(vk, 0)
+                    self._handle_key_event(vk, bool(flags & mask), False,
+                                           source="nsevent")
+                except Exception as e:
+                    dbg(f"monitor nsevent error: {e}")
+
+            self._ns_monitor = NSEvent.\
+                addGlobalMonitorForEventsMatchingMask_handler_(
+                    NSEVENT_MASK_FLAGS_CHANGED, _monitor_handler)
+            dbg(f"monitor NSEvent: {'activo' if self._ns_monitor else 'FALLÓ'}")
+        except Exception as e:
+            dbg(f"monitor NSEvent no disponible: {e}")
+
+    def _stop_listeners(self):
+        try:
+            if getattr(self, "_listener", None) is not None:
+                self._listener.stop()
+        except Exception:
+            pass
+        self._listener = None
+        try:
+            if getattr(self, "_ns_monitor", None) is not None:
+                from AppKit import NSEvent
+                NSEvent.removeMonitor_(self._ns_monitor)
+        except Exception:
+            pass
+        self._ns_monitor = None
+
+    def _permission_watch_loop(self):
+        """Mientras falte algún permiso, lo recomprueba cada pocos segundos.
+        En cuanto se conceden, reengancha los listeners y quita el aviso del
+        menú. (macOS a veces exige salir y volver a abrir; si es el caso, el
+        aviso del menú sigue guiando al usuario.)"""
+        while True:
+            time.sleep(3)
+            ax = check_accessibility(prompt=False)
+            im = check_input_monitoring(prompt=False)
+            if (ax, im) == (self._perm_ax, self._perm_im):
+                continue
+            dbg(f"permisos cambiados — Accesibilidad: {'OK' if ax else 'NO'} | "
+                f"Monitorización de entrada: {'OK' if im else 'NO'}")
+            self._perm_ax, self._perm_im = ax, im
+            self._dispatch(self._build_menu)
+            if ax and im:
+                dbg("permisos completos — reenganchando los listeners")
+                self._start_listeners()
+                return
+
+    def _open_permission_pane(self, _):
+        pane = "Privacy_ListenEvent" if not self._perm_im else "Privacy_Accessibility"
+        subprocess.Popen(["open",
+            f"x-apple.systempreferences:com.apple.preference.security?{pane}"])
+        threading.Thread(
+            target=lambda: self._ax_help_dialog(self._perm_ax, self._perm_im),
+            daemon=True).start()
 
     def _request_permissions(self, ax_ok, im_ok):
         """Pide al sistema los permisos que falten y explica cuáles son."""
@@ -1088,11 +1155,27 @@ class WhisperDictationApp(rumps.App):
                 t("new_version").format(self._update_available),
                 callback=self._open_download_page, icon="download")]
 
+        # Aviso de permiso ARRIBA DEL TODO. Sin esto, una app sin
+        # Monitorización de entrada se ve idéntica a una que funciona: icono en
+        # la barra, menú completo… y la tecla muda, sin ninguna pista.
+        perm_items = []
+        missing = []
+        if not getattr(self, "_perm_im", True):
+            missing.append(t("perm_input"))
+        if not getattr(self, "_perm_ax", True):
+            missing.append(t("perm_ax"))
+        if missing:
+            perm_items = [mi(t("perm_missing").format(", ".join(missing)),
+                             callback=self._open_permission_pane,
+                             icon="keyboard", tooltip=t("ax_help")),
+                          None]
+
         self.menu.clear()
         self.menu = [
             rumps.MenuItem(f"Whisper Dictation VP v{APP_VERSION}"),
             *update_items,
             None,
+            *perm_items,
             provider_menu,
             lang_menu,
             mi(t("hotkey_line").format(hotkey_name), icon="keyboard",
@@ -1486,16 +1569,7 @@ class WhisperDictationApp(rumps.App):
     def _quit(self, _):
         close_all_dialogs()
         self._ui_timer.stop()
-        try:
-            self._listener.stop()
-        except Exception:
-            pass
-        try:
-            if self._ns_monitor is not None:
-                from AppKit import NSEvent
-                NSEvent.removeMonitor_(self._ns_monitor)
-        except Exception:
-            pass
+        self._stop_listeners()
         self.stream.stop()
         self.stream.close()
         rumps.quit_application()

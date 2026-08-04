@@ -168,6 +168,18 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.5.2 — arreglo del fallo histórico «la tecla no responde» (macOS)
+- **La app pedía solo uno de los dos permisos que necesita.** macOS separa en dos servicios TCC distintos lo que hace falta: `kTCCServiceAccessibility` para **pegar** el texto y `kTCCServiceListenEvent` (**Monitorización de entrada**) para **leer** la tecla de dictado. La app solo pedía el primero, así que el event tap de pynput y el monitor de `NSEvent` se creaban sin error pero nunca recibían un solo evento de teclado
+- Por eso **el doble canal de escucha de la v3.1.3 no arregló nada**: los dos canales dependen del mismo permiso que faltaba
+- Y como nunca se llamaba a `IOHIDRequestAccess` ni se declaraba `NSInputMonitoringUsageDescription`, la app **ni siquiera aparecía** en la lista de Monitorización de entrada: no había forma de activarla a mano
+- **Aviso visible en el menú** cuando falta un permiso, con acceso directo al panel correcto — antes una app sorda se veía idéntica a una que funciona
+- **Reenganche en caliente**: al conceder el permiso, los listeners se recrean solos sin reiniciar la app
+- El instalador resetea `ListenEvent` además de `Accessibility` (con firma ad-hoc los dos quedan huérfanos en cada build)
+- **`tools/diagnostico.sh`** — diagnóstico local que dice en 5 segundos qué permiso falta, cuántos eventos de teclado ha recibido la app y si el build instalado lleva el arreglo
+- Arreglado un `IndexError` que mataba la app durante el arranque, sin icono ni aviso, si el primer arranque terminaba sin proveedor
+- Arreglado `dialog_choice()`: comparaba con el literal `"Cancelar"`, así que con la interfaz en inglés «Cancel» salía como una opción más de la lista (era el camino que llevaba al `IndexError` anterior)
+- Windows: el aviso de bienvenida decía «Alt derecho» cuando la tecla por defecto pasó a ser Alt izquierdo en la v3.4.1; ahora se lee de la configuración
+
 ### v3.5.1 (solo Windows — en Mac puedes ignorar esta actualización)
 - **Selector de micrófono en el menú** — caso real diagnosticado: Windows daba como entrada predeterminada el micrófono de una webcam que no captaba nada (RMS plano) y la app "no transcribía"; ahora eliges el micrófono correcto desde el menú de la bandeja y queda guardado
 - El log registra el micrófono activo y cada cambio de dispositivo
