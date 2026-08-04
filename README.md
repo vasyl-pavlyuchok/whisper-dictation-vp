@@ -79,12 +79,19 @@ Solo necesitas **una** API key para empezar. **Recomendado: Groq** — es gratui
 
 ### Permisos necesarios
 
-**Accesibilidad (obligatorio)** — para detectar la tecla de dictado y pegar el texto:
+macOS separa en **dos permisos distintos** lo que la app necesita. **Hacen falta los dos**: con uno solo la app arranca, el icono 🎙 aparece en la barra… y la tecla no responde.
 
-1. macOS mostrará el aviso automáticamente al abrir la app. Si no:
-2. **Ajustes del Sistema → Privacidad y seguridad → Accesibilidad**
-3. Activa **Whisper Dictation VP**
+| Permiso | Para qué | Si falta |
+|---------|----------|----------|
+| **Monitorización de entrada** | **Leer** la tecla de dictado | La app no recibe ninguna pulsación: nada ocurre al pulsar la tecla |
+| **Accesibilidad** | **Pegar** el texto transcrito | Graba y transcribe, pero el texto no se pega |
+
+1. macOS mostrará los dos avisos automáticamente al abrir la app. Si no:
+2. **Ajustes del Sistema → Privacidad y seguridad → Monitorización de entrada** → activa **Whisper Dictation VP**
+3. **Ajustes del Sistema → Privacidad y seguridad → Accesibilidad** → activa **Whisper Dictation VP**
 4. Sal de la app (icono 🎙 → Salir) y vuelve a abrirla
+
+> **El fallo clásico:** tener solo Accesibilidad activada. La casilla aparece marcada, todo *parece* correcto y la tecla sigue sin hacer nada — porque quien autoriza a *leer* el teclado es Monitorización de entrada, no Accesibilidad.
 
 > Si vienes de la v2.x: el permiso ahora es para «Whisper Dictation VP», ya no para «Terminal». Puedes desmarcar Terminal de la lista.
 

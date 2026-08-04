@@ -76,14 +76,21 @@ You only need **one** API key to get started. **Recommended: Groq** — free, bl
 
 ### Required permissions
 
-**Accessibility (required)** — to detect the dictation key and paste the text:
+macOS splits what the app needs into **two separate permissions**. **Both are required**: with only one the app starts, the 🎙 icon shows up in the menu bar… and the key does nothing.
 
-1. macOS shows the prompt automatically when the app opens. If it doesn't:
-2. **System Settings → Privacy & Security → Accessibility**
-3. Enable **Whisper Dictation VP**
-4. Quit the app (🎙 icon → Salir) and open it again
+| Permission | What for | If missing |
+|------------|----------|------------|
+| **Input Monitoring** | **Read** the dictation key | The app receives no keystrokes at all: pressing the key does nothing |
+| **Accessibility** | **Paste** the transcribed text | It records and transcribes, but the text is never pasted |
 
-> Accessibility must be re-granted after each update because the app's signature changes; it's one click per version.
+1. macOS shows both prompts automatically when the app opens. If it doesn't:
+2. **System Settings → Privacy & Security → Input Monitoring** → enable **Whisper Dictation VP**
+3. **System Settings → Privacy & Security → Accessibility** → enable **Whisper Dictation VP**
+4. Quit the app (🎙 icon → Quit) and open it again
+
+> **The classic failure:** having only Accessibility enabled. The checkbox is ticked, everything *looks* right, and the key still does nothing — because what authorises *reading* the keyboard is Input Monitoring, not Accessibility.
+
+> Both permissions must be re-granted after each update because the app's signature changes; it's one click per version.
 
 **Microphone** — macOS asks automatically the first time you record.
 

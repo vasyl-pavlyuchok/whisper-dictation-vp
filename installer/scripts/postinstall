@@ -26,14 +26,17 @@ pkill -f "Whisper Dictation VP.app/Contents/MacOS" 2>/dev/null || true
 rm -rf /usr/local/lib/whisper_dictation_vp 2>/dev/null || true
 sleep 1
 
-# ── 1b. Resetear el permiso de Accesibilidad si la firma es ad-hoc ───────────
+# ── 1b. Resetear los permisos TCC si la firma es ad-hoc ──────────────────────
 # Con firma ad-hoc, cada build tiene identidad distinta y el permiso de la
 # versión anterior queda "huérfano": la casilla aparece activada pero macOS
 # ignora al binario nuevo (la tecla no responde y el aviso sale en cada
 # arranque). Al resetear, macOS pide el permiso UNA vez, limpio, y funciona.
 # Con firma estable (certificado local) el permiso se conserva y NO se resetea.
+# Hay que resetear LOS DOS permisos: Accessibility (pegar) y ListenEvent
+# (leer la tecla) — si solo se resetea el primero, la app sigue muda.
 if codesign -dv "/Applications/Whisper Dictation VP.app" 2>&1 | grep -q "adhoc"; then
   tccutil reset Accessibility com.vasyl.whisper-dictation-vp 2>/dev/null || true
+  tccutil reset ListenEvent   com.vasyl.whisper-dictation-vp 2>/dev/null || true
 fi
 
 # ── 2. Crear LaunchAgent (auto-inicio al login) ──────────────────────────────
@@ -69,11 +72,12 @@ if [ "$USER_LANG" = "es" ]; then
 dialog_ok \
 "✅ Whisper Dictation VP 3.5.1 instalada correctamente.
 
-ÚLTIMO PASO — al abrirse la app, macOS pedirá el permiso de Accesibilidad:
+ÚLTIMO PASO — macOS pedirá DOS permisos. Hacen falta LOS DOS: con uno solo la app arranca pero la tecla no responde.
 
-1. Pulsa «Abrir Ajustes del Sistema» en el aviso
-2. Activa la casilla «Whisper Dictation VP»
-3. Sal de la app (icono 🎙 → Salir) y vuelve a abrirla
+1. Monitorización de entrada — para LEER la tecla de dictado
+2. Accesibilidad — para PEGAR el texto transcrito
+
+Acepta los dos avisos, o ve a Ajustes del Sistema → Privacidad y seguridad y activa «Whisper Dictation VP» en las dos listas. Después sal de la app (icono 🎙 → Salir) y vuelve a abrirla.
 
 Este paso se pide en cada actualización porque la firma de la app cambia; es normal y solo hay que hacerlo una vez por versión." \
 "Whisper Dictation VP instalada" "note"
@@ -81,11 +85,12 @@ else
 dialog_ok \
 "✅ Whisper Dictation VP 3.5.1 installed successfully.
 
-LAST STEP — when the app opens, macOS will ask for the Accessibility permission:
+LAST STEP — macOS will ask for TWO permissions. BOTH are required: with only one the app starts but the key does nothing.
 
-1. Click 'Open System Settings' in the prompt
-2. Enable the 'Whisper Dictation VP' checkbox
-3. Quit the app (🎙 icon → Quit) and open it again
+1. Input Monitoring — to READ the dictation key
+2. Accessibility — to PASTE the transcribed text
+
+Accept both prompts, or go to System Settings → Privacy & Security and enable 'Whisper Dictation VP' in both lists. Then quit the app (🎙 icon → Quit) and open it again.
 
 This step is required after each update because the app's signature changes; it's normal and only needed once per version." \
 "Whisper Dictation VP installed" "note"

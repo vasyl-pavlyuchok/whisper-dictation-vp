@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Whisper Dictation VP — Dictado por voz para Windows (beta).
-Doble-toque Alt derecho para iniciar grabación. Toque simple para detener.
+Doble-toque en la tecla configurada (Alt izquierdo por defecto) para iniciar
+grabación. Toque simple para detener.
 Diseñado por Vasyl Pavlyuchok & Claude — v3.5.1
 """
 
@@ -573,9 +574,16 @@ class WhisperDictationWin:
         self.config["providers"][provider] = api_key
         self.config["active_provider"] = provider
         save_config(self.config)
+        # La tecla se lee de la config: desde la v3.4.1 el valor por defecto es
+        # Alt izquierdo (en teclados ES el Alt derecho es AltGr y pynput lo
+        # reporta como una tecla distinta), pero este aviso seguía diciendo
+        # «Alt derecho» — la gente pulsaba una tecla que no estaba escuchando.
+        key_name = HOTKEY_NAMES.get(self.config.get("hotkey", "alt"),
+                                    self.config.get("hotkey", "alt"))
         dialog_info(
-            "¡Listo! Doble-toque en Alt derecho para grabar,\n"
+            f"¡Listo! Doble-toque en {key_name} para grabar,\n"
             "toque simple para detener.\n\n"
+            "Puedes cambiar la tecla en el menú del icono de la bandeja.\n"
             "El texto se pega automáticamente donde estés escribiendo.")
 
     # ── Cliente ───────────────────────────────────────────────────────────────

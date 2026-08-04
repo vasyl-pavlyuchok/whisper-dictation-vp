@@ -98,12 +98,17 @@ TR = {
         "dlg_active": " (activo)", "dlg_use_this": "Usar este",
         "dlg_change_key": "Cambiar API key",
         "dlg_confirm_delete": "¿Eliminar {}?",
-        "ax_help": "Whisper Dictation VP necesita el permiso de Accesibilidad "
-                   "para detectar la tecla de dictado y pegar el texto.\n\n"
-                   "En el aviso de macOS pulsa «Abrir Ajustes del Sistema» y "
-                   "activa «Whisper Dictation VP».\n\n"
+        "ax_help": "Whisper Dictation VP necesita DOS permisos distintos de "
+                   "macOS. Con uno solo la app arranca pero la tecla no "
+                   "responde:\n\n"
+                   "1. Monitorización de entrada — para LEER la tecla de "
+                   "dictado\n"
+                   "2. Accesibilidad — para PEGAR el texto transcrito\n\n"
+                   "Ajustes del Sistema → Privacidad y seguridad → activa "
+                   "«Whisper Dictation VP» en LAS DOS listas.\n\n"
                    "Después sal de la app (icono 🎙 → Salir) y vuelve a abrirla.",
-        "ax_open": "Abrir Ajustes", "ok": "OK",
+        "ax_open": "Abrir Accesibilidad",
+        "im_open": "Abrir Monitorización de entrada", "ok": "OK",
         "hotkeys": {
             "alt_r": "Option derecho", "alt": "Option izquierdo",
             "alt_l": "Option izquierdo", "cmd": "Command izquierdo",
@@ -150,12 +155,16 @@ TR = {
         "dlg_active": " (active)", "dlg_use_this": "Use this one",
         "dlg_change_key": "Change API key",
         "dlg_confirm_delete": "Delete {}?",
-        "ax_help": "Whisper Dictation VP needs the Accessibility permission "
-                   "to detect the dictation key and paste the text.\n\n"
-                   "In the macOS prompt click “Open System Settings” and "
-                   "enable “Whisper Dictation VP”.\n\n"
+        "ax_help": "Whisper Dictation VP needs TWO separate macOS "
+                   "permissions. With only one the app starts but the key "
+                   "does nothing:\n\n"
+                   "1. Input Monitoring — to READ the dictation key\n"
+                   "2. Accessibility — to PASTE the transcribed text\n\n"
+                   "System Settings → Privacy & Security → enable “Whisper "
+                   "Dictation VP” in BOTH lists.\n\n"
                    "Then quit the app (🎙 icon → Quit) and open it again.",
-        "ax_open": "Open Settings", "ok": "OK",
+        "ax_open": "Open Accessibility",
+        "im_open": "Open Input Monitoring", "ok": "OK",
         "hotkeys": {
             "alt_r": "Right Option", "alt": "Left Option",
             "alt_l": "Left Option", "cmd": "Left Command",
@@ -419,6 +428,51 @@ def check_accessibility(prompt=True):
         return True  # Si no se puede comprobar, seguimos sin bloquear la app
 
 
+# ── Permiso de Monitorización de Entrada (Input Monitoring) ───────────────────
+# macOS separa en DOS permisos distintos lo que esta app necesita:
+#
+#   • Accesibilidad          (kTCCServicePostEvent)   → PEGAR el texto
+#   • Monitorización entrada (kTCCServiceListenEvent) → LEER la tecla de dictado
+#
+# Sin el segundo, tanto el event tap de pynput como el monitor global de
+# NSEvent se crean sin error pero NUNCA reciben eventos de teclado: la casilla
+# de Accesibilidad aparece marcada y aun así la tecla no responde. Además, si
+# la app no lo solicita explícitamente vía IOHIDRequestAccess, no llega a
+# aparecer en la lista de «Monitorización de entrada» y el usuario no tiene ni
+# forma de activarla. Es la causa del fallo histórico «permiso concedido pero
+# la tecla no responde».
+
+IOKIT_FRAMEWORK              = "/System/Library/Frameworks/IOKit.framework/IOKit"
+kIOHIDRequestTypeListenEvent = 1
+kIOHIDAccessTypeGranted      = 0
+
+def _iokit_hid():
+    """Carga IOKit y declara las firmas de IOHIDCheckAccess/IOHIDRequestAccess.
+    Se usa ctypes porque PyObjC no expone estas funciones."""
+    import ctypes
+    lib = ctypes.cdll.LoadLibrary(IOKIT_FRAMEWORK)
+    lib.IOHIDCheckAccess.argtypes   = [ctypes.c_uint32]
+    lib.IOHIDCheckAccess.restype    = ctypes.c_int
+    lib.IOHIDRequestAccess.argtypes = [ctypes.c_uint32]
+    lib.IOHIDRequestAccess.restype  = ctypes.c_bool
+    return lib
+
+def check_input_monitoring(prompt=False):
+    """Comprueba si la app puede LEER eventos de teclado. Con prompt=True,
+    macOS muestra su diálogo y registra la app en «Monitorización de entrada»
+    (sin esta llamada la app ni siquiera aparece en esa lista)."""
+    try:
+        lib = _iokit_hid()
+        granted = (lib.IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
+                   == kIOHIDAccessTypeGranted)
+        if not granted and prompt:
+            granted = bool(lib.IOHIDRequestAccess(kIOHIDRequestTypeListenEvent))
+        return granted
+    except Exception as e:
+        dbg(f"IOHIDCheckAccess no disponible: {e}")
+        return True  # Si no se puede comprobar, seguimos sin bloquear la app
+
+
 def acquire_single_instance_lock():
     """Garantiza una sola instancia (el instalador y el LaunchAgent pueden
     lanzar la app casi a la vez). Devuelve el fichero de lock o None."""
@@ -528,10 +582,18 @@ def dialog_text_view_fallback(text):
     parts = result.split("|", 1)
     return parts[0], parts[1] if len(parts) > 1 else text
 
+#: Etiquetas que cuentan como «cancelar» en cualquier idioma de la interfaz.
+#: Antes se comparaba con el literal "Cancelar", así que con la interfaz en
+#: inglés el botón "Cancel" se colaba como una opción más de la lista y el
+#: valor devuelto al cancelar ("Cancelar") no coincidía con lo que esperaba
+#: quien llamaba.
+CANCEL_LABELS = ("Cancelar", "Cancel")
+
 def dialog_choice(prompt, *buttons):
-    options    = [b for b in buttons if b != "Cancelar"]
-    has_cancel = "Cancelar" in buttons
-    safe_prompt = _osa_escape(prompt)
+    cancel_label = next((b for b in buttons if b in CANCEL_LABELS), None)
+    options      = [b for b in buttons if b != cancel_label]
+    has_cancel   = cancel_label is not None
+    safe_prompt  = _osa_escape(prompt)
 
     if len(options) <= 2 and not has_cancel:
         btn_str = ", ".join(f'"{b}"' for b in buttons)
@@ -547,13 +609,14 @@ def dialog_choice(prompt, *buttons):
             f'buttons {{{btn_str}}} default button "{options[-1]}")'])
     else:
         items_str = ", ".join(f'"{o}"' for o in options)
+        cancel    = cancel_label or "Cancelar"
         result = _run_dialog(["osascript", "-e",
             f'set r to choose from list {{{items_str}}} '
             f'with title "Whisper Dictation VP" with prompt "{safe_prompt}" '
-            f'OK button name "Seleccionar" cancel button name "Cancelar"\n'
-            f'if r is false then return "Cancelar"\n'
+            f'OK button name "Seleccionar" cancel button name "{_osa_escape(cancel)}"\n'
+            f'if r is false then return "{_osa_escape(cancel)}"\n'
             f'return item 1 of r'])
-        return result if result else "Cancelar"
+        return result if result else cancel
 
 def dialog_info(msg):
     safe_msg = _osa_escape(msg)
@@ -704,6 +767,13 @@ class WhisperDictationApp(rumps.App):
         if not self.config["providers"]:
             self._setup_provider(first_run=True)
 
+        # Sin proveedor no hay nada que hacer. Salimos limpiamente: antes se
+        # indexaba una lista vacía y la app moría con IndexError durante el
+        # arranque, sin icono en la barra y sin ningún aviso al usuario.
+        if not self.config["providers"]:
+            dbg("sin proveedor configurado — saliendo")
+            sys.exit(0)
+
         if not self.config["active_provider"] or \
            self.config["active_provider"] not in self.config["providers"]:
             self.config["active_provider"] = list(self.config["providers"].keys())[0]
@@ -718,19 +788,22 @@ class WhisperDictationApp(rumps.App):
         )
         self.stream.start()
 
-        # Permiso de Accesibilidad: comprobación SILENCIOSA primero. Solo si
-        # falta, pedimos con el diálogo del sistema — y únicamente una vez por
-        # versión, para no ser pesados en cada arranque.
-        if not check_accessibility(prompt=False):
-            dbg("accesibilidad NO concedida")
+        # Permisos: comprobación SILENCIOSA primero de LOS DOS que hacen falta.
+        # Solo si falta alguno pedimos con el diálogo del sistema — y únicamente
+        # una vez por versión, para no ser pesados en cada arranque.
+        ax_ok = check_accessibility(prompt=False)
+        im_ok = check_input_monitoring(prompt=False)
+        dbg(f"permisos — Accesibilidad: {'OK' if ax_ok else 'NO'} | "
+            f"Monitorización de entrada: {'OK' if im_ok else 'NO'}")
+        if not (ax_ok and im_ok):
             if self.config.get("ax_prompted_version") != APP_VERSION:
                 with self.config_lock:
                     self.config["ax_prompted_version"] = APP_VERSION
                     save_config(self.config)
-                check_accessibility(prompt=True)
-                threading.Thread(target=self._ax_help_dialog, daemon=True).start()
-        else:
-            dbg("accesibilidad OK")
+                # En hilo aparte: IOHIDRequestAccess bloquea hasta que el
+                # usuario responde y no debe retrasar el icono de la barra.
+                threading.Thread(target=self._request_permissions,
+                                 args=(ax_ok, im_ok), daemon=True).start()
 
         self._listener = keyboard.Listener(
             on_press=self._on_press, on_release=self._on_release)
@@ -840,14 +913,28 @@ class WhisperDictationApp(rumps.App):
         except Exception as e:
             dbg(f"SELFTEST error: {e}")
 
-    def _ax_help_dialog(self):
+    def _request_permissions(self, ax_ok, im_ok):
+        """Pide al sistema los permisos que falten y explica cuáles son."""
+        if not ax_ok:
+            check_accessibility(prompt=True)
+        if not im_ok:
+            # Esta llamada es la que registra la app en la lista de
+            # «Monitorización de entrada»; sin ella no aparece siquiera.
+            granted = check_input_monitoring(prompt=True)
+            dbg(f"IOHIDRequestAccess(ListenEvent) → {granted}")
+        self._ax_help_dialog(ax_ok, im_ok)
+
+    def _ax_help_dialog(self, ax_ok=False, im_ok=False):
+        # Abrimos el panel del permiso que falte; si faltan los dos, el de
+        # Monitorización de entrada, que es el que nadie encuentra.
+        pane, open_label = ("Privacy_Accessibility", self._t("ax_open"))
+        if not im_ok:
+            pane, open_label = ("Privacy_ListenEvent", self._t("im_open"))
         choice = dialog_choice(
-            self._t("ax_help"),
-            self._t("ax_open"), self._t("ok"))
-        if choice == self._t("ax_open"):
+            self._t("ax_help"), open_label, self._t("ok"))
+        if choice == open_label:
             subprocess.Popen(["open",
-                "x-apple.systempreferences:com.apple.preference.security"
-                "?Privacy_Accessibility"])
+                f"x-apple.systempreferences:com.apple.preference.security?{pane}"])
 
     # ── UI dispatch ───────────────────────────────────────────────────────────
 
