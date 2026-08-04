@@ -13,7 +13,7 @@
 
 🇪🇸 🇬🇧 🇺🇦 🇫🇷 🇩🇪 🇮🇹 🇵🇹 🇨🇳 🇷🇺 🇸🇦 🇮🇳 🇯🇵 🇰🇷 🇹🇷 🇵🇱 🇳🇱
 
-Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.1.2
+Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.4.0
 
 ---
 
