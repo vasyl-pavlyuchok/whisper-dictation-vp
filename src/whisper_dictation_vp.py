@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.6.2
+Diseñado por Vasyl Pavlyuchok & Claude — v3.6.3
 """
 
-APP_VERSION = "3.6.2"
+APP_VERSION = "3.6.3"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -662,7 +662,7 @@ def ai_cleanup(provider, client, text, dictionary=None):
     )
     if provider == "groq":
         r = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
             messages=[{"role": "system", "content": system},
                       {"role": "user", "content": text}],
             temperature=0.2,

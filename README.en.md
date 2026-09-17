@@ -150,6 +150,7 @@ rm -f ~/.whisper_dictation_vp.json
 
 See the full changelog (in Spanish) in [README.md](README.md#changelog). Highlights:
 
+- **v3.6.3** — fix: AI Format was silently falling back to raw text because Groq decommissioned `llama-3.3-70b-versatile`; switched to `openai/gpt-oss-120b` (Groq's recommended replacement, still free)
 - **v3.6.2** — Windows version out of beta: validated on real hardware (hotkey, visual indicator, sounds, microphone, clipboard and Bluetooth handling verified one by one)
 - **v3.6.x** — the microphone is only opened while dictating, so Bluetooth headphones stay in high quality the rest of the time
 - **v3.5.2** (Windows only) — dictation no longer wipes your clipboard (it is saved and restored around the paste); fixed 64-bit `ctypes` clipboard calls that truncated pointers; single-instance mutex so two copies can't both listen, record and paste; no more audio dropouts when stopping a recording

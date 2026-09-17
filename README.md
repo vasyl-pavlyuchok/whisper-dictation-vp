@@ -161,6 +161,9 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.6.3
+- **Fix: el formato IA (limpieza de muletillas y puntuación) volvía a caer al texto sin formatear** — Groq retiró el modelo `llama-3.3-70b-versatile` el 16-ago-2026 y la llamada fallaba con 404. Cambiado a `openai/gpt-oss-120b` (el reemplazo recomendado por Groq), gratuito igual que antes. La transcripción en sí nunca dejó de funcionar
+
 ### v3.6.2
 - **La versión de Windows sale de beta** — validada en hardware real (portátil con Windows 11): tecla, indicador visual, sonidos, micrófono, portapapeles y gestión de Bluetooth verificados uno a uno; su comportamiento con auriculares Bluetooth es equivalente al de las apps comerciales de dictado
 - Documentación y página de descargas actualizadas: el instalador pasa a ser la opción recomendada en Windows
