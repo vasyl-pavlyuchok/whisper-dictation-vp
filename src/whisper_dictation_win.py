@@ -3,10 +3,10 @@
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque en la tecla configurada (Alt izquierdo por defecto) para iniciar
 grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.6.3
+Diseñado por Vasyl Pavlyuchok & Claude — v3.6.4
 """
 
-APP_VERSION = "3.6.3"
+APP_VERSION = "3.6.4"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -322,7 +322,10 @@ def paste_text(text):
 def build_client(provider, api_key):
     if provider == "groq":
         from groq import Groq
-        return Groq(api_key=api_key)
+        # Mismo arreglo que la version macOS (v3.6.4): sin timeout, una
+        # respuesta lenta/atascada de Groq bloquea el hilo de proceso para
+        # siempre.
+        return Groq(api_key=api_key, timeout=20.0)
     elif provider == "openai":
         from openai import OpenAI
         return OpenAI(api_key=api_key)
