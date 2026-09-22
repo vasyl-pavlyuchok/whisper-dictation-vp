@@ -585,7 +585,11 @@ def set_clipboard(text):
 def build_client(provider, api_key):
     if provider == "groq":
         from groq import Groq
-        return Groq(api_key=api_key)
+        # Sin timeout, una respuesta lenta/colgada de Groq (p.ej. sirviendo
+        # openai/gpt-oss-120b en la limpieza de texto) bloquea el hilo de
+        # _process para siempre: el icono se queda en "procesando" y no se
+        # pega nada -- eso es el "colgado" que reporta Vasyl, no un crash.
+        return Groq(api_key=api_key, timeout=20.0)
     elif provider == "openai":
         from openai import OpenAI
         return OpenAI(api_key=api_key)
