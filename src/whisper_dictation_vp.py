@@ -2,16 +2,33 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.6.4
+Diseñado por Vasyl Pavlyuchok & Claude — v3.6.5
 """
 
-APP_VERSION = "3.6.4"
+APP_VERSION = "3.6.5"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
 from pynput import keyboard
 from dotenv import load_dotenv
 load_dotenv()
+
+def paste_cmd_v():
+    """Simula Cmd+V con pynput (CGEventPost nativo), sin pasar por
+    `osascript`/`System Events`. v3.6.5: el camino anterior
+    (`osascript -e 'tell application "System Events" to keystroke...'`)
+    tiene un efecto secundario de macOS -- al procesar el AppleEvent, el
+    Dock se desoculta un instante y macOS lo vuelve a ocultar solo segundos
+    despues (confirmado con el log unificado: el disparo de System Events
+    coincide, al segundo, con cada aviso de "el Dock ya no esta oculto").
+    pynput ya es dependencia del proyecto (listener del atajo global) y en
+    macOS pega directamente por CGEventPost, sin AppleEvents de por medio,
+    asi que no dispara ese efecto."""
+    kb = keyboard.Controller()
+    with kb.pressed(keyboard.Key.cmd):
+        kb.press("v")
+        kb.release("v")
+
 
 CONFIG_FILE       = os.path.expanduser("~/.whisper_dictation_vp.json")
 HISTORY_MAX       = 10
@@ -1418,9 +1435,7 @@ class WhisperDictationApp(rumps.App):
                 set_clipboard(text)
                 # Nuestro Cmd+V sintético no debe contar como toque del hotkey
                 self._suppress_until = time.time() + 1.0
-                subprocess.run(["osascript", "-e",
-                    'tell application "System Events" to keystroke "v" using command down'],
-                    check=True)
+                paste_cmd_v()
                 play_sound("Pop")
             else:
                 play_sound("Funk")
