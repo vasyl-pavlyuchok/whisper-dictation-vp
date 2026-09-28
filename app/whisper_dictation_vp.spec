@@ -4,7 +4,7 @@
 
 import os
 
-APP_VERSION = "3.6.5"
+APP_VERSION = "3.6.6"
 repo_dir = os.path.dirname(os.path.abspath(SPECPATH))
 
 a = Analysis(

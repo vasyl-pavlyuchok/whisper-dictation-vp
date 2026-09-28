@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.6.5
+Diseñado por Vasyl Pavlyuchok & Claude — v3.6.6
 """
 
-APP_VERSION = "3.6.5"
+APP_VERSION = "3.6.6"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -1356,17 +1356,29 @@ class WhisperDictationApp(rumps.App):
         self._register_tap(now)
 
     def _register_tap(self, now):
+        # Dentro del lock, lo mínimo (mismo fix que ya lleva whisper_dictation_win.py,
+        # que nunca se portó aquí). _close_stream() llama a stream.stop(), que espera a
+        # que termine la invocación de _audio_callback en curso — y _audio_callback pide
+        # este mismo lock. Si _close_stream() se corre con el lock cogido, y en ese
+        # instante el hilo de PortAudio ya está dentro de _audio_callback esperando el
+        # lock, stream.stop() nunca vuelve (espera al callback) y el callback nunca
+        # avanza (espera el lock que tiene el hilo bloqueado en stream.stop()):
+        # deadlock real, no solo lentitud. Coincide con el síntoma medido: el log se
+        # corta justo tras "tap: STOP grabación", sin "micrófono liberado" después.
+        frames = None
         with self.lock:
             if self.recording:
                 self.recording      = False
                 frames              = list(self.audio_frames)
                 self._last_tap_time = 0.0
-                dbg("tap: STOP grabación")
-                self._close_stream()
-                self._dispatch(self._set_title, ICON_PROCESSING)
-                threading.Thread(target=self._process, args=(frames,),
-                                 daemon=True).start()
-                return
+
+        if frames is not None:
+            dbg("tap: STOP grabación")
+            self._close_stream()
+            self._dispatch(self._set_title, ICON_PROCESSING)
+            threading.Thread(target=self._process, args=(frames,),
+                             daemon=True).start()
+            return
 
         if now - self._last_tap_time <= DOUBLE_TAP_WINDOW:
             self._last_tap_time = 0.0
