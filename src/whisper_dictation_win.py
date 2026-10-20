@@ -3,10 +3,10 @@
 Whisper Dictation VP — Dictado por voz para Windows (beta).
 Doble-toque en la tecla configurada (Alt izquierdo por defecto) para iniciar
 grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.6.6
+Diseñado por Vasyl Pavlyuchok & Claude — v3.6.7
 """
 
-APP_VERSION = "3.6.6"
+APP_VERSION = "3.6.7"
 
 import os, sys, tempfile, threading, json, wave, time
 import numpy as np
@@ -338,25 +338,76 @@ def build_client(provider, api_key):
         return aai
     return None
 
+# Límite del campo "prompt" que aceptan los endpoints de transcripción.
+# Groq documenta un máximo de 224 tokens para este campo, y además tiene un
+# bug de servidor confirmado (reportado en su foro desde dic-2025, aún sin
+# resolver) por el que un prompt largo dispara errores 500 intermitentes en
+# /audio/transcriptions. Solo Groq y OpenAI reciben este prompt — Deepgram y
+# AssemblyAI no lo soportan — así que un diccionario personal largo rompe la
+# transcripción SOLO con Groq/OpenAI, nunca con Deepgram: mismo síntoma que
+# "Groq no funciona, con Deepgram sí".
+PROMPT_CHAR_LIMIT = 600  # ~150 tokens, margen bajo el límite de 224 de Groq
+
+def _vocab_hint(dictionary):
+    """Diccionario personal unido en un "prompt", recortado por palabras
+    completas para no exceder PROMPT_CHAR_LIMIT."""
+    if not dictionary:
+        return None
+    hint = ", ".join(dictionary)
+    if len(hint) <= PROMPT_CHAR_LIMIT:
+        return hint
+    out, length = [], 0
+    for word in dictionary:
+        add = len(word) + 2
+        if length + add > PROMPT_CHAR_LIMIT:
+            break
+        out.append(word)
+        length += add
+    return ", ".join(out) if out else None
+
 def transcribe(provider, client, path, language, dictionary=None):
     lang = None if language == "auto" else language
-    vocab_hint = ", ".join(dictionary) if dictionary else None
+    vocab_hint = _vocab_hint(dictionary)
     if provider == "groq":
         with open(path, "rb") as f:
             kwargs = {"prompt": vocab_hint} if vocab_hint else {}
-            r = client.audio.transcriptions.create(
-                file=(os.path.basename(path), f, "audio/wav"),
-                model="whisper-large-v3",
-                language=lang,
-                response_format="text",
-                **kwargs,
-            )
+            try:
+                r = client.audio.transcriptions.create(
+                    file=(os.path.basename(path), f, "audio/wav"),
+                    model="whisper-large-v3",
+                    language=lang,
+                    response_format="text",
+                    **kwargs,
+                )
+            except Exception as e:
+                if not kwargs:
+                    raise
+                # El bug de servidor de Groq de más arriba: reintentamos sin
+                # el prompt en vez de perder la transcripción entera. Perder
+                # el diccionario personal una vez es mejor que no pegar nada.
+                dbg(f"groq: fallo con prompt ({e}); reintento sin prompt")
+                f.seek(0)
+                r = client.audio.transcriptions.create(
+                    file=(os.path.basename(path), f, "audio/wav"),
+                    model="whisper-large-v3",
+                    language=lang,
+                    response_format="text",
+                )
         return r.strip() if isinstance(r, str) else r.text.strip()
     elif provider == "openai":
         with open(path, "rb") as f:
             kwargs = {"prompt": vocab_hint} if vocab_hint else {}
-            r = client.audio.transcriptions.create(
-                model="whisper-1", file=f, language=lang, **kwargs)
+            try:
+                r = client.audio.transcriptions.create(
+                    model="whisper-1", file=f, language=lang, **kwargs)
+            except Exception as e:
+                if not kwargs:
+                    raise
+                # Misma red de seguridad que Groq, por si acaso — coste nulo.
+                dbg(f"openai: fallo con prompt ({e}); reintento sin prompt")
+                f.seek(0)
+                r = client.audio.transcriptions.create(
+                    model="whisper-1", file=f, language=lang)
         return r.text.strip()
     elif provider == "deepgram":
         with open(path, "rb") as f:

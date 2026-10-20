@@ -161,6 +161,18 @@ rm -f ~/.whisper_dictation_vp.json
 
 ## Changelog
 
+### v3.6.7
+- **Fix: con Groq, el dictado no funcionaba en absoluto si tenías palabras en el Diccionario personal** — mientras con Deepgram funcionaba. Causa: el campo `prompt` (usado solo por Groq/OpenAI para pasar el diccionario personal) tiene un límite documentado de 224 tokens en Groq, y además un bug de servidor confirmado en su foro (desde dic-2025, sin resolver) por el que ese campo dispara errores 500 intermitentes — `transcribe()` no atrapaba ese fallo, así que la app no pegaba nada. Ahora el prompt se recorta a un tamaño seguro y, si Groq falla con él, se reintenta sin prompt antes de rendirse: perder el diccionario personal una vez es mejor que no transcribir
+
+### v3.6.6
+- **Fix: deadlock real al parar la grabación en Mac** — intermitente, dependía de si el hilo de audio en tiempo real estaba procesando un bloque justo en el instante de soltar la tecla. `_close_stream()` se llamaba con el lock de grabación cogido, el mismo que pide el callback de audio; si coincidían, ninguno de los dos hilos avanzaba. El fix de Windows para este mismo patrón nunca se había portado a macOS
+
+### v3.6.5
+- **Fix: el Dock se desocultaba un instante al pegar el texto dictado** — el Cmd+V sintético pasaba por AppleEvents (`osascript`/System Events), que tiene ese efecto secundario en macOS. Sustituido por `pynput.keyboard.Controller`, que pega con eventos nativos sin pasar por System Events
+
+### v3.6.4
+- **Fix: la app se quedaba "colgada" tras dictar (reportado 3 veces desde la v3.6.3)** — el cliente de Groq no tenía timeout, así que una respuesta lenta o atascada al limpiar el texto con IA bloqueaba el hilo de proceso para siempre: icono en "procesando", nada se pega. Añadido timeout de 20s en Mac y Windows — un atasco se convierte en excepción capturable en vez de cuelgue infinito
+
 ### v3.6.3
 - **Fix: el formato IA (limpieza de muletillas y puntuación) volvía a caer al texto sin formatear** — Groq retiró el modelo `llama-3.3-70b-versatile` el 16-ago-2026 y la llamada fallaba con 404. Cambiado a `openai/gpt-oss-120b` (el reemplazo recomendado por Groq), gratuito igual que antes. La transcripción en sí nunca dejó de funcionar
 

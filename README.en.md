@@ -150,6 +150,8 @@ rm -f ~/.whisper_dictation_vp.json
 
 See the full changelog (in Spanish) in [README.md](README.md#changelog). Highlights:
 
+- **v3.6.7** — fix: dictation produced nothing at all on Groq (while working fine on Deepgram) if you had words in your personal dictionary. Groq's `prompt` field — used only by Groq/OpenAI to pass the dictionary — has a documented 224-token limit and a confirmed, unresolved server-side bug causing intermittent 500s; the prompt is now capped to a safe length, and a failed call retries once without it instead of pasting nothing
+- **v3.6.4–v3.6.6** — Groq client timeout (a stuck AI-cleanup response could hang the app forever); a real deadlock stopping recording on Mac; the Dock briefly un-hiding on paste
 - **v3.6.3** — fix: AI Format was silently falling back to raw text because Groq decommissioned `llama-3.3-70b-versatile`; switched to `openai/gpt-oss-120b` (Groq's recommended replacement, still free)
 - **v3.6.2** — Windows version out of beta: validated on real hardware (hotkey, visual indicator, sounds, microphone, clipboard and Bluetooth handling verified one by one)
 - **v3.6.x** — the microphone is only opened while dictating, so Bluetooth headphones stay in high quality the rest of the time
