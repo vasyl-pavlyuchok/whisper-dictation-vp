@@ -2,10 +2,10 @@
 """
 Whisper Dictation VP — Dictado por voz para macOS.
 Doble-toque Option derecho para iniciar grabación. Toque simple para detener.
-Diseñado por Vasyl Pavlyuchok & Claude — v3.6.7
+Diseñado por Vasyl Pavlyuchok & Claude — v3.7.0
 """
 
-APP_VERSION = "3.6.7"
+APP_VERSION = "3.7.0"
 
 import os, sys, tempfile, threading, subprocess, json, wave, time, queue
 import rumps, numpy as np, sounddevice as sd
@@ -89,6 +89,12 @@ TR = {
         "dictionary": "Diccionario", "add_word": "Añadir palabra…",
         "delete": "Eliminar",
         "updates": "Avisar de actualizaciones",
+        "avoid_bt_mic": "Micrófono del Mac con auriculares Bluetooth",
+        "tip_avoid_bt_mic": "Si llevas auriculares Bluetooth, graba con el micrófono del Mac en vez del de los auriculares: empieza a grabar al instante, se oye mejor y tu música no pierde calidad mientras dictas.",
+        "mic_dead_title": "El micrófono no da sonido",
+        "mic_dead_body": "Activa Whisper Dictation VP en Ajustes del Sistema → Privacidad y seguridad → Micrófono.",
+        "silence_title": "No se ha oído nada",
+        "silence_body": "La grabación solo tenía silencio y no se ha transcrito. Revisa el micrófono en Ajustes del Sistema → Sonido → Entrada.",
         "ui_menu": "Interfaz",
         "tip_ai": "Un modelo de IA (gratuito con Groq) limpia la transcripción antes de pegarla: elimina muletillas («eh», «em»…), corrige puntuación y mayúsculas. No cambia el significado.",
         "tip_dict": "Palabras que Whisper suele transcribir mal (nombres propios, marcas, tecnicismos). Se usan para guiar la transcripción y el Formato IA.",
@@ -141,6 +147,12 @@ TR = {
         "dictionary": "Dictionary", "add_word": "Add word…",
         "delete": "Delete",
         "updates": "Notify about updates",
+        "avoid_bt_mic": "Mac microphone with Bluetooth headphones",
+        "tip_avoid_bt_mic": "When you wear Bluetooth headphones, record with the Mac's microphone instead of the headset's: recording starts instantly, sounds better and your music keeps full quality while you dictate.",
+        "mic_dead_title": "The microphone gives no sound",
+        "mic_dead_body": "Enable Whisper Dictation VP in System Settings → Privacy & Security → Microphone.",
+        "silence_title": "Nothing was heard",
+        "silence_body": "The recording was only silence and was not transcribed. Check the microphone in System Settings → Sound → Input.",
         "ui_menu": "Interface",
         "tip_ai": "An AI model (free with Groq) cleans the transcript before pasting: removes filler words, fixes punctuation and casing. Meaning is never changed.",
         "tip_dict": "Words Whisper tends to get wrong (proper nouns, brands, technical terms). Used to guide both transcription and AI Format.",
@@ -464,6 +476,7 @@ def load_config():
     config.setdefault("ai_format", False)
     config.setdefault("dictionary", [])
     config.setdefault("check_updates", True)
+    config.setdefault("mac_mic_bt", True)
     config.setdefault("ui_lang", system_ui_lang())
     # Migración única (v3.4): el modo Automático pasa a ser el predeterminado
     # también para configs existentes — quien quiera un idioma fijo lo
@@ -578,6 +591,110 @@ def dialog_info(msg):
         f'tell app "System Events" to display dialog "{safe_msg}" '
         f'with title "Whisper Dictation VP" buttons {{"OK"}} default button "OK"'])
 
+# ── Micrófono: evitar el de los auriculares Bluetooth ────────────────────────
+# Con auriculares Bluetooth como entrada, macOS los pasa a modo manos libres
+# (HFP, 8 kHz): tardan ~0,5-1,5 s en dar audio (se pierde el principio del
+# dictado), suenan peor y la música baja de calidad mientras se graba. Como
+# para dictar hay que estar delante del teclado, el micrófono del Mac basta.
+
+def _fourcc(s):
+    return int.from_bytes(s.encode("ascii"), "big")
+
+_BT_TRANSPORTS = {_fourcc("blue"), _fourcc("blea")}
+_BUILTIN_TRANSPORT = _fourcc("bltn")
+
+def _coreaudio_input_devices():
+    """Lista [(nombre, transporte, es_entrada_por_defecto)] vía CoreAudio
+    (ctypes, sin dependencias). Devuelve [] si algo falla."""
+    import ctypes, ctypes.util
+    try:
+        ca = ctypes.CDLL(ctypes.util.find_library("CoreAudio"))
+        cf = ctypes.CDLL(ctypes.util.find_library("CoreFoundation"))
+    except Exception:
+        return []
+
+    class Addr(ctypes.Structure):
+        _fields_ = [("sel", ctypes.c_uint32), ("scope", ctypes.c_uint32),
+                    ("elem", ctypes.c_uint32)]
+
+    get = ca.AudioObjectGetPropertyData
+    get.argtypes = [ctypes.c_uint32, ctypes.POINTER(Addr), ctypes.c_uint32,
+                    ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32),
+                    ctypes.c_void_p]
+    get.restype = ctypes.c_int32
+    get_size = ca.AudioObjectGetPropertyDataSize
+    get_size.argtypes = [ctypes.c_uint32, ctypes.POINTER(Addr), ctypes.c_uint32,
+                         ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint32)]
+    get_size.restype = ctypes.c_int32
+    cf.CFStringGetCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p,
+                                      ctypes.c_long, ctypes.c_uint32]
+    cf.CFStringGetCString.restype = ctypes.c_bool
+    cf.CFRelease.argtypes = [ctypes.c_void_p]
+
+    GLOB, INPUT = _fourcc("glob"), _fourcc("inpt")
+
+    def u32(obj, sel, scope=GLOB):
+        v, sz = ctypes.c_uint32(0), ctypes.c_uint32(4)
+        if get(obj, ctypes.byref(Addr(sel, scope, 0)), 0, None,
+               ctypes.byref(sz), ctypes.byref(v)) != 0:
+            return None
+        return v.value
+
+    def name(obj):
+        ref, sz = ctypes.c_void_p(), ctypes.c_uint32(ctypes.sizeof(ctypes.c_void_p))
+        if get(obj, ctypes.byref(Addr(_fourcc("lnam"), GLOB, 0)), 0, None,
+               ctypes.byref(sz), ctypes.byref(ref)) != 0 or not ref.value:
+            return None
+        buf = ctypes.create_string_buffer(512)
+        ok = cf.CFStringGetCString(ref, buf, 512, 0x08000100)  # UTF-8
+        cf.CFRelease(ref)
+        return buf.value.decode("utf-8") if ok else None
+
+    try:
+        default_in = u32(1, _fourcc("dIn "))
+        addr = Addr(_fourcc("dev#"), GLOB, 0)
+        sz = ctypes.c_uint32(0)
+        if get_size(1, ctypes.byref(addr), 0, None, ctypes.byref(sz)) != 0:
+            return []
+        n = sz.value // 4
+        ids = (ctypes.c_uint32 * n)()
+        if get(1, ctypes.byref(addr), 0, None, ctypes.byref(sz), ids) != 0:
+            return []
+        out = []
+        for dev in ids:
+            # ¿tiene canales de entrada? (tamaño de la config de streams)
+            isz = ctypes.c_uint32(0)
+            if get_size(dev, ctypes.byref(Addr(_fourcc("slay"), INPUT, 0)), 0,
+                        None, ctypes.byref(isz)) != 0 or isz.value <= 8:
+                continue
+            nm = name(dev)
+            if nm:
+                out.append((nm, u32(dev, _fourcc("tran")), dev == default_in))
+        return out
+    except Exception as e:
+        dbg(f"CoreAudio: no se pudo listar micrófonos: {e}")
+        return []
+
+def pick_input_device(avoid_bluetooth=True):
+    """Índice de sounddevice del micrófono a usar, o None para el del sistema.
+    Si la entrada por defecto es Bluetooth y hay micrófono integrado, se usa
+    el integrado."""
+    if not avoid_bluetooth:
+        return None
+    devs = _coreaudio_input_devices()
+    default = next((d for d in devs if d[2]), None)
+    if not default or default[1] not in _BT_TRANSPORTS:
+        return None
+    builtin = next((d for d in devs if d[1] == _BUILTIN_TRANSPORT), None)
+    if not builtin:
+        dbg(f"entrada Bluetooth ({default[0]}) y no hay micrófono integrado")
+        return None
+    for i, d in enumerate(sd.query_devices()):
+        if d["max_input_channels"] > 0 and d["name"] == builtin[0]:
+            dbg(f"auriculares Bluetooth ({default[0]}): grabo con «{builtin[0]}»")
+            return i
+    return None
+
 def play_sound(sound):
     subprocess.Popen(["afplay", f"/System/Library/Sounds/{sound}.aiff"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -676,7 +793,11 @@ def transcribe(provider, client, path, language, dictionary=None):
                     language=lang,
                     response_format="text",
                 )
-        return r.strip() if isinstance(r, str) else r.text.strip()
+        # Con response_format="text" el SDK de Groq devuelve int/float si la
+        # respuesta es un número puro (p. ej. «42»): no tiene .text.
+        if isinstance(r, str):
+            return r.strip()
+        return (getattr(r, "text", None) or str(r)).strip()
     elif provider == "openai":
         with open(path, "rb") as f:
             kwargs = {"prompt": vocab_hint} if vocab_hint else {}
@@ -764,6 +885,8 @@ class WhisperDictationApp(rumps.App):
 
         self.recording    = False
         self.audio_frames = []
+        self._mic_live    = False
+        self._open_time   = 0.0
 
         self._last_tap_time = 0.0
         self._last_tap_end  = 0.0
@@ -1056,6 +1179,12 @@ class WhisperDictationApp(rumps.App):
             callback=self._toggle_check_updates,
             icon="bell", tooltip=t("tip_updates"))
 
+        bt_on = self.config.get("mac_mic_bt", True)
+        bt_item = mi(
+            f"{t('avoid_bt_mic')}: {t('yes') if bt_on else t('no')}",
+            callback=self._toggle_avoid_bt_mic,
+            icon="mic", tooltip=t("tip_avoid_bt_mic"))
+
         # Submenú Interfaz: idiomas de la UI con marca en el activo
         ui_lang_item = mi(t("ui_menu"), icon="globe", tooltip=t("tip_ui"))
         active_ui = self.config.get("ui_lang", "es")
@@ -1084,6 +1213,7 @@ class WhisperDictationApp(rumps.App):
             None,
             ai_item,
             dict_menu,
+            bt_item,
             updates_item,
             ui_lang_item,
             None,
@@ -1107,6 +1237,19 @@ class WhisperDictationApp(rumps.App):
             self.config["check_updates"] = not self.config.get("check_updates", True)
             save_config(self.config)
         self._build_menu()
+
+    def _toggle_avoid_bt_mic(self, _):
+        with self.config_lock:
+            self.config["mac_mic_bt"] = not self.config.get("mac_mic_bt", True)
+            save_config(self.config)
+        self._build_menu()
+
+    def _notify_silence(self):
+        try:
+            rumps.notification("Whisper Dictation VP",
+                               self._t("silence_title"), self._t("silence_body"))
+        except Exception as e:
+            dbg(f"notificación falló: {e}")
 
     def _add_dictionary_word(self):
         word = dialog_input(self._t("dlg_add_word")).strip()
@@ -1136,6 +1279,7 @@ class WhisperDictationApp(rumps.App):
             return
         self.config["active_provider"] = provider
         save_config(self.config)
+        dbg(f"proveedor cambiado a {provider}")
         self._build_client()
         self._build_menu()
 
@@ -1344,7 +1488,9 @@ class WhisperDictationApp(rumps.App):
         """Abre el micrófono para grabar. Devuelve True si lo consigue."""
         self._close_stream()
         try:
+            device = pick_input_device(self.config.get("mac_mic_bt", True))
             self.stream = sd.InputStream(
+                device=device,
                 samplerate=SAMPLE_RATE, channels=CHANNELS,
                 dtype=DTYPE, callback=self._audio_callback, blocksize=1024,
             )
@@ -1357,8 +1503,38 @@ class WhisperDictationApp(rumps.App):
 
     def _audio_callback(self, indata, frames, time_info, status):
         with self.lock:
-            if self.recording:
-                self.audio_frames.append(indata.copy())
+            if not self.recording:
+                return
+            # Los auriculares Bluetooth tardan ~0,5-1,5 s en cambiar a modo
+            # micrófono y mientras tanto solo entregan ceros. No guardamos ese
+            # tramo y no damos la señal de «habla» (Tink) hasta que llega
+            # sonido real: así no se pierde el principio del dictado.
+            if not self._mic_live:
+                if not indata.any():
+                    return
+                self._mic_live = True
+                threading.Thread(target=self._on_mic_live, daemon=True).start()
+            self.audio_frames.append(indata.copy())
+
+    def _check_mic_live(self):
+        """3 s sin una sola muestra de sonido = macOS nos da el micrófono
+        mudo, casi siempre por permiso de micrófono huérfano o denegado."""
+        with self.lock:
+            dead = self.recording and not self._mic_live
+        if dead:
+            dbg("AVISO: 3 s sin sonido del micrófono — ¿permiso de micrófono?")
+            play_sound("Basso")
+            try:
+                rumps.notification("Whisper Dictation VP",
+                                   self._t("mic_dead_title"),
+                                   self._t("mic_dead_body"))
+            except Exception as e:
+                dbg(f"notificación falló: {e}")
+
+    def _on_mic_live(self):
+        dbg(f"micrófono listo en {time.time() - self._open_time:.2f}s")
+        play_sound("Tink")
+        self._dispatch(self._set_title, ICON_RECORDING)
 
     def _current_hotkey_vk(self):
         return HOTKEY_VKS.get(self.config.get("hotkey", "alt_r"), 61)
@@ -1435,14 +1611,16 @@ class WhisperDictationApp(rumps.App):
             self._last_tap_time = 0.0
             with self.lock:
                 self.audio_frames.clear()
+                self._mic_live  = False
+                self._open_time = time.time()
+                self.recording  = True
             if not self._open_stream():
+                with self.lock:
+                    self.recording = False
                 play_sound("Basso")
                 return
-            with self.lock:
-                self.recording = True
-            dbg("doble tap: START grabación")
-            play_sound("Tink")
-            self._dispatch(self._set_title, ICON_RECORDING)
+            dbg("doble tap: START grabación (espero a que el micrófono dé sonido)")
+            threading.Timer(3.0, self._check_mic_live).start()
         else:
             self._last_tap_time = now
 
@@ -1452,6 +1630,9 @@ class WhisperDictationApp(rumps.App):
         path = None
         try:
             if not frames:
+                play_sound("Funk")
+                dbg("AVISO: el micrófono no llegó a dar sonido, nada grabado")
+                self._dispatch(self._notify_silence)
                 return
 
             audio    = np.concatenate(frames, axis=0)
@@ -1459,12 +1640,15 @@ class WhisperDictationApp(rumps.App):
 
             if duration < 0.3:
                 play_sound("Funk")
-                print(f"⚠ Grabación demasiado corta ({duration:.2f}s), ignorada")
+                dbg(f"AVISO: grabación demasiado corta ({duration:.2f}s), ignorada")
                 return
 
             rms = np.sqrt(np.mean(audio.astype(np.float32) ** 2))
             if rms < 2:
-                print(f"⚠ Silencio detectado (RMS={rms:.1f}), ignorado")
+                play_sound("Funk")
+                dbg(f"AVISO: solo silencio ({duration:.1f}s, RMS={rms:.1f}), "
+                    "ignorada — ¿micrófono correcto?")
+                self._dispatch(self._notify_silence)
                 return
 
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:

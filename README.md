@@ -13,7 +13,7 @@
 
 🇪🇸 🇬🇧 🇺🇦 🇫🇷 🇩🇪 🇮🇹 🇵🇹 🇨🇳 🇷🇺 🇸🇦 🇮🇳 🇯🇵 🇰🇷 🇹🇷 🇵🇱 🇳🇱
 
-Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.4.0
+Diseñado por **Vasyl Pavlyuchok** & **Claude** — v3.7.0
 
 ---
 
@@ -115,7 +115,8 @@ Solo necesitas **una** API key para empezar. **Recomendado: Groq** — es gratui
 - **Últimas 10 transcripciones** guardadas en el historial
 - **Detección automática de idioma** — habla en el idioma que quieras y Whisper lo detecta; o fíjalo entre 16 idiomas (español, inglés, ucraniano, francés, alemán, italiano, portugués, chino, ruso, árabe, hindi, japonés, coreano, turco, polaco, neerlandés)
 - **Tecla de activación configurable** — Option derecho, Option izquierdo, Control o Command
-- **Detección de silencio** — no envía nada a la API si no hay voz
+- **🎧 Con auriculares Bluetooth, graba con el micrófono del Mac** (solo macOS) — el micrófono de los auriculares Bluetooth tarda en activarse y a veces solo entrega silencio; la app usa el integrado del Mac (ajuste «Micrófono del Mac con auriculares Bluetooth», activado por defecto). Además espera a que el micrófono dé sonido real antes de la señal «Tink», así no se pierde el principio del dictado.
+- **Detección de silencio** — no envía nada a la API si no hay voz, y te avisa con un sonido y una notificación
 - **Feedback sonoro** — Tink al iniciar, Pop al transcribir, Basso si hay un error
 - Se inicia automáticamente al arrancar el equipo
 
@@ -160,6 +161,14 @@ rm -f ~/.whisper_dictation_vp.json
 ---
 
 ## Changelog
+
+### v3.7.0 (solo macOS — en Windows puedes ignorar esta actualización)
+- **Ya no se pierde el principio del dictado** — al abrirse, el micrófono (sobre todo el de unos auriculares Bluetooth) entrega ~1,5 s de silencio. Ahora la app espera a que llegue sonido real y solo entonces suena «Tink»: habla al oírlo. Antes ese tramo se perdía y los dictados cortos se descartaban como silencio sin avisar.
+- **Con auriculares Bluetooth, la app graba con el micrófono del Mac** — nuevo ajuste «Micrófono del Mac con auriculares Bluetooth», activado por defecto. Medido con unos Beats Flex: su micrófono tardaba ~1,5 s en activarse y a veces entregaba solo silencio. Tú sigues oyendo por los auriculares; solo cambia el micrófono. Un micrófono USB u otro que no sea Bluetooth se respeta.
+- **Aviso cuando la grabación es solo silencio** — antes se descartaba sin decir nada y parecía que la app no hacía caso. Ahora suena un aviso, aparece una notificación («No se ha oído nada») y queda apuntado en el log (`~/Library/Logs/WhisperDictationVP.log`)
+- Las grabaciones demasiado cortas también se apuntan ahora en el log
+- **Si el micrófono pasa 3 s sin dar sonido, la app te avisa** y te dice dónde activar el permiso; el instalador ahora también reinicia el permiso de micrófono (con la firma ad-hoc, el de la versión anterior se quedaba «huérfano» y macOS entregaba silencio sin preguntar)
+- **Fix: con Groq, un dictado que era solo un número («cuarenta y dos») daba error** en vez de pegar «42»
 
 ### v3.6.7
 - **Fix: con Groq, el dictado no funcionaba en absoluto si tenías palabras en el Diccionario personal** — mientras con Deepgram funcionaba. Causa: el campo `prompt` (usado solo por Groq/OpenAI para pasar el diccionario personal) tiene un límite documentado de 224 tokens en Groq, y además un bug de servidor confirmado en su foro (desde dic-2025, sin resolver) por el que ese campo dispara errores 500 intermitentes — `transcribe()` no atrapaba ese fallo, así que la app no pegaba nada. Ahora el prompt se recorta a un tamaño seguro y, si Groq falla con él, se reintenta sin prompt antes de rendirse: perder el diccionario personal una vez es mejor que no transcribir

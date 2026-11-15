@@ -13,7 +13,7 @@
 
 🇪🇸 🇬🇧 🇺🇦 🇫🇷 🇩🇪 🇮🇹 🇵🇹 🇨🇳 🇷🇺 🇸🇦 🇮🇳 🇯🇵 🇰🇷 🇹🇷 🇵🇱 🇳🇱
 
-Designed by **Vasyl Pavlyuchok** & **Claude** — v3.4.0
+Designed by **Vasyl Pavlyuchok** & **Claude** — v3.7.0
 
 ---
 
@@ -112,7 +112,8 @@ You only need **one** API key to get started. **Recommended: Groq** — free, bl
 - **4 AI providers** — add, switch or remove APIs from the menu
 - **Configurable hotkey** — right/left Option, Command or Control
 - **🔔 Update notifications** — the app checks GitHub once a day and offers new versions from the menu (can be turned off with one click)
-- **Silence detection** — nothing is sent to the API if there's no voice
+- **🎧 With Bluetooth headphones, records with the Mac's microphone** (macOS only) — Bluetooth headset mics take time to activate and sometimes deliver only silence; the app uses the Mac's built-in mic (setting «Mac microphone with Bluetooth headphones», on by default). It also waits for real sound before the «Tink» cue, so the start of a dictation is never lost.
+- **Silence detection** — nothing is sent to the API if there's no voice, and you get a sound and a notification
 - Starts automatically at login
 
 ---
@@ -150,6 +151,7 @@ rm -f ~/.whisper_dictation_vp.json
 
 See the full changelog (in Spanish) in [README.md](README.md#changelog). Highlights:
 
+- **v3.7.0** (macOS only) — with Bluetooth headphones the app records with the Mac's built-in microphone (new setting, on by default; headset mics took ~1.5 s to activate and sometimes delivered only silence). The app waits for real sound before playing «Tink», so the start of a dictation is no longer lost. If a recording is only silence, or the mic gives no sound for 3 s, you get a sound and a notification. The installer now also resets the microphone permission. Groq no longer crashes when a dictation is just a number.
 - **v3.6.7** — fix: dictation produced nothing at all on Groq (while working fine on Deepgram) if you had words in your personal dictionary. Groq's `prompt` field — used only by Groq/OpenAI to pass the dictionary — has a documented 224-token limit and a confirmed, unresolved server-side bug causing intermittent 500s; the prompt is now capped to a safe length, and a failed call retries once without it instead of pasting nothing
 - **v3.6.4–v3.6.6** — Groq client timeout (a stuck AI-cleanup response could hang the app forever); a real deadlock stopping recording on Mac; the Dock briefly un-hiding on paste
 - **v3.6.3** — fix: AI Format was silently falling back to raw text because Groq decommissioned `llama-3.3-70b-versatile`; switched to `openai/gpt-oss-120b` (Groq's recommended replacement, still free)
