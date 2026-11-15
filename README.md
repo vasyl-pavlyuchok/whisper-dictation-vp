@@ -140,6 +140,19 @@ El archivo de configuración se guarda en `~/.whisper_dictation_vp.json`. Para r
 
 Genera `WhisperDictationVP-<Arquitectura>.pkg` en el Escritorio, con la app y su Python embebido vía PyInstaller. Si el llavero contiene la identidad `Whisper Dictation VP Signing`, la app se firma con ella (permiso de Accesibilidad estable entre versiones); si no, firma ad-hoc.
 
+**Firma estable (opcional, solo si compilas tú)** — si descargas la app de Releases no tienes que hacer nada. Si la compilas en tu Mac, sin certificado cada compilación tiene una firma distinta y macOS deja «huérfanos» los permisos de Micrófono y Accesibilidad: la app graba silencio y no pega el texto. Para evitarlo, crea una vez un certificado local:
+
+1. Abre **Acceso a Llaveros** → menú **Acceso a Llaveros → Asistente para certificados → Crear un certificado…**
+2. **Nombre:** `Whisper Dictation VP Signing` (exacto).
+3. **Tipo de identidad:** Raíz autofirmada · **Tipo de certificado:** Firma de código → **Crear**.
+
+`build.sh` lo detecta solo. La primera vez que instales una versión firmada después de una sin firmar, reinicia los permisos una sola vez y vuelve a concederlos al abrir la app:
+
+```bash
+tccutil reset Microphone com.vasyl.whisper-dictation-vp
+tccutil reset Accessibility com.vasyl.whisper-dictation-vp
+```
+
 **Releases automáticas** — al subir un tag `v*`, GitHub Actions compila las tres versiones (macOS arm64, macOS x86_64 y Windows) y las publica en Releases.
 
 ---

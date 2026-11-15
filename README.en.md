@@ -128,6 +128,19 @@ You only need **one** API key to get started. **Recommended: Groq** — free, bl
 
 Generates `WhisperDictationVP-<Arch>.pkg` on the Desktop with the app and its embedded Python via PyInstaller.
 
+**Stable signing (optional, only if you build it yourself)** — if you download the app from Releases you don't need to do anything. If you build it on your Mac without a certificate, every build gets a different signature and macOS orphans the Microphone and Accessibility permissions: the app records silence and can't paste. To avoid it, create a local certificate once:
+
+1. Open **Keychain Access** → menu **Keychain Access → Certificate Assistant → Create a Certificate…**
+2. **Name:** `Whisper Dictation VP Signing` (exactly).
+3. **Identity Type:** Self-Signed Root · **Certificate Type:** Code Signing → **Create**.
+
+`build.sh` picks it up automatically. The first time you install a signed build after an unsigned one, reset the permissions once and grant them again when the app opens:
+
+```bash
+tccutil reset Microphone com.vasyl.whisper-dictation-vp
+tccutil reset Accessibility com.vasyl.whisper-dictation-vp
+```
+
 **Automated releases** — pushing a `v*` tag makes GitHub Actions build all three versions (macOS arm64, macOS x86_64 and Windows) and publish them to Releases.
 
 ---
